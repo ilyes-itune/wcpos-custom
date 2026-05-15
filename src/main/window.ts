@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import { BrowserWindow, shell, protocol } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import serve from 'electron-serve';
 
 import { logger as log } from './log';
@@ -25,36 +25,34 @@ const APP_VERSION = 'WCPOS Custom 1.7';
 const WP_AJAX_URL = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
 const WP_SITE_URL = 'https://usmm-tir.fr';
 
-/* ── JS anti-pub injecté dans chaque page ───────────────────────────────────
-   Utilise window.__wcposAntiProActive pour ne s'initialiser qu'une fois
-   même si executeJavaScript est appelé plusieurs fois.
-   ─────────────────────────────────────────────────────────────────────────── */
-const ANTI_PRO_JS = `
+/* ═══════════════════════════════════════════════════════════════════════════
+   JS UNIQUE — anti-pub + panneaux custom + overlay caisse
+   Injecté via le polling (seul mécanisme fiable sur wcpos://)
+   window.__wcposActive empêche la double initialisation
+   ═══════════════════════════════════════════════════════════════════════════ */
+const INJECT_JS = `
 (function () {
+
+  /* ── Anti-pub (toujours actif, même avant React) ─── */
   var HIDE = [
-    'upgrade-notice-banner',
-    'upgrade-title',
-    'upgrade-to-pro-button',
-    'view-demo-button',
-    'add-fee',
-    'add-shipping'
+    'upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
+    'view-demo-button','add-fee','add-shipping'
   ];
 
   function injectCSS() {
     if (document.getElementById('wcpos-anti-pro')) return;
     var s = document.createElement('style');
     s.id = 'wcpos-anti-pro';
-    s.textContent = HIDE.map(function(t) {
-      return '[data-testid="' + t + '"]';
-    }).join(',') + '{display:none!important;visibility:hidden!important}';
+    s.textContent = HIDE.map(function(t){ return '[data-testid="'+t+'"]'; }).join(',')
+      + '{display:none!important;visibility:hidden!important}';
     (document.head || document.documentElement).appendChild(s);
   }
 
   function hide() {
     injectCSS();
     HIDE.forEach(function(t) {
-      document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
-        el.style.setProperty('display', 'none', 'important');
+      document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el) {
+        el.style.setProperty('display','none','important');
       });
     });
   }
@@ -63,23 +61,21 @@ const ANTI_PRO_JS = `
 
   if (!window.__wcposAntiProActive) {
     window.__wcposAntiProActive = true;
-    [100, 300, 700, 1500, 3000].forEach(function(ms) { setTimeout(hide, ms); });
+    [100,300,700,1500,3000].forEach(function(ms){ setTimeout(hide,ms); });
     setInterval(hide, 500);
-    new MutationObserver(hide).observe(document.documentElement, {
-      childList: true, subtree: true
-    });
+    new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});
   }
-})();
-`;
 
-/* ── JS principal (caisse, panneaux, overlay) ───────────────────────────── */
-const MAIN_JS = `
-(function () {
-  'use strict';
+  /* ── Partie principale — ne s'initialise qu'une fois ── */
   if (window.__wcposMainInjected) return;
+
+  /* Attend que le body React soit monté (titlebar = app chargée) */
+  if (!document.getElementById('titlebar')) return;
+
   window.__wcposMainInjected = true;
 
   var AJAX_URL = '${WP_AJAX_URL}';
+
   var PANEL_TEXTS = {
     products:  'Ajustez les prix et quantités',
     orders:    'Rouvrez et imprimez les reçus',
@@ -91,23 +87,24 @@ const MAIN_JS = `
     var fd = new FormData();
     fd.append('action', action);
     if (data) Object.keys(data).forEach(function(k){ fd.append(k, data[k]); });
-    return fetch(AJAX_URL, { method:'POST', body:fd, credentials:'include' })
+    return fetch(AJAX_URL,{method:'POST',body:fd,credentials:'include'})
       .then(function(r){ return r.json(); })
-      .then(function(r){ return r.data || r; });
+      .then(function(r){ return r.data||r; });
   }
 
+  /* ── Panneaux custom ─────────────────────────────── */
   function findProPanel() {
     var candidates = [];
-    ['r-13awgt0','r-1p0dtai','r-6koalj','r-14lw9ot'].forEach(function(cls) {
+    ['r-13awgt0','r-1p0dtai','r-6koalj','r-14lw9ot'].forEach(function(cls){
       document.querySelectorAll('.'+cls).forEach(function(el){ candidates.push(el); });
     });
     candidates = candidates.filter(function(el,i,a){ return a.indexOf(el)===i; });
-    var best = null, bestH = Infinity;
-    candidates.forEach(function(el) {
-      var r = el.getBoundingClientRect();
+    var best=null, bestH=Infinity;
+    candidates.forEach(function(el){
+      var r=el.getBoundingClientRect();
       if (r.width<400||r.height<100||r.x>200||r.width<window.innerWidth*0.4) return;
       for (var pid in PANEL_TEXTS) {
-        if ((el.textContent||'').indexOf(PANEL_TEXTS[pid])!==-1 && r.height<bestH) {
+        if ((el.textContent||'').indexOf(PANEL_TEXTS[pid])!==-1&&r.height<bestH){
           bestH=r.height; best={el:el,panelId:pid};
         }
       }
@@ -115,7 +112,7 @@ const MAIN_JS = `
     if (!best) {
       for (var pid in PANEL_TEXTS) {
         if (best) break;
-        document.querySelectorAll('*').forEach(function(el) {
+        document.querySelectorAll('*').forEach(function(el){
           if (best) return;
           var r=el.getBoundingClientRect();
           if (r.width<400||r.height<100||r.x>200) return;
@@ -130,8 +127,8 @@ const MAIN_JS = `
 
   function loadPanel(panelId, wrapper) {
     wrapper.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
-    ajax('wcpos_panel',{panel_id:panelId}).then(function(data) {
-      if (!data||!data.html) {
+    ajax('wcpos_panel',{panel_id:panelId}).then(function(data){
+      if (!data||!data.html){
         wrapper.innerHTML='<div style="padding:20px;background:#fce8e8;border-radius:6px;color:#8a1010;font-family:sans-serif">\uD83D\uDD12 Connectez-vous \u00e0 WordPress.</div>';
         return;
       }
@@ -139,7 +136,7 @@ const MAIN_JS = `
       wrapper.querySelectorAll('script').forEach(function(s){
         var ns=document.createElement('script'); ns.textContent=s.textContent; s.parentNode.replaceChild(ns,s);
       });
-      wrapper.querySelectorAll('form').forEach(function(form) {
+      wrapper.querySelectorAll('form').forEach(function(form){
         if ((form.method||'get').toLowerCase()==='get') return;
         form.addEventListener('submit',function(e){
           e.preventDefault();
@@ -156,7 +153,7 @@ const MAIN_JS = `
     });
   }
 
-  function bindCaisseElements(root) {
+  function bindCaisseElements(root){
     root.querySelectorAll('[data-caisse-nav]:not([data-bound])').forEach(function(btn){
       btn.setAttribute('data-bound','1');
       btn.addEventListener('click',function(){ window._wcpos_action={type:'nav',view:btn.getAttribute('data-caisse-nav')||''}; });
@@ -166,13 +163,15 @@ const MAIN_JS = `
       form.addEventListener('submit',function(e){
         e.preventDefault();
         var ft=form.getAttribute('data-caisse-form');
-        window._wcpos_action=ft==='ponction'?{type:'ponction',data:new FormData(form)}:{type:'submit',action:ft,data:new FormData(form)};
+        window._wcpos_action=ft==='ponction'
+          ?{type:'ponction',data:new FormData(form)}
+          :{type:'submit',action:ft,data:new FormData(form)};
       });
     });
   }
 
   var injecting=false;
-  function injectPanel() {
+  function injectPanel(){
     if (injecting) return;
     var found=findProPanel(); if (!found) return;
     var el=found.el, pid=found.panelId;
@@ -188,20 +187,24 @@ const MAIN_JS = `
     setTimeout(function(){ injecting=false; },500);
   }
 
+  /* ── Navigation caisse ───────────────────────────── */
   window._wcpos_action=null;
 
-  function reloadCaissePanel(view) {
+  function reloadCaissePanel(view){
     var w=document.getElementById('wcpos-panel-content'); if(!w) return;
     ajax('wcpos_panel',{panel_id:'customers',caisse_view:view||''}).then(function(data){
       if(!data||!data.html) return;
       w.innerHTML=data.html;
-      w.querySelectorAll('script').forEach(function(s){ var ns=document.createElement('script'); ns.textContent=s.textContent; s.parentNode.replaceChild(ns,s); });
+      w.querySelectorAll('script').forEach(function(s){
+        var ns=document.createElement('script'); ns.textContent=s.textContent; s.parentNode.replaceChild(ns,s);
+      });
     });
   }
 
-  function submitCaisseForm(action,formData) {
+  function submitCaisseForm(action,formData){
     var w=document.getElementById('wcpos-panel-content'); if(!w) return;
-    formData.append('action','wcpos_caisse_submit'); formData.append('wcpos_caisse_action',action);
+    formData.append('action','wcpos_caisse_submit');
+    formData.append('wcpos_caisse_action',action);
     fetch(AJAX_URL,{method:'POST',body:formData,credentials:'include'})
     .then(function(){ reloadCaissePanel('dashboard'); setTimeout(checkCaisse,400); });
   }
@@ -217,23 +220,26 @@ const MAIN_JS = `
   new MutationObserver(function(){ bindCaisseElements(document.body); })
     .observe(document.body,{childList:true,subtree:true});
 
+  /* ── Overlay caisse fermée ───────────────────────── */
   var PANEL_WAS_SHOWN=false;
   function isCustomPanelVisible(){ return !!document.getElementById('wcpos-panel-content'); }
 
-  function showCaisseOverlay(message) {
+  function showCaisseOverlay(message){
     if (document.getElementById('wcpos-caisse-overlay')) return;
     var ov=document.createElement('div');
     ov.id='wcpos-caisse-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;color:#fff';
     ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">\uD83D\uDD12</div>'
       +'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 10px">Caisse ferm\u00e9e</h2>'
-      +'<p style="font-size:.9em;color:rgba(255,255,255,.8);max-width:360px;line-height:1.5;margin:0 0 20px">'+(message||'Ouvrez la caisse avant d\'utiliser le POS.')+'</p>'
+      +'<p style="font-size:.9em;color:rgba(255,255,255,.8);max-width:360px;line-height:1.5;margin:0 0 20px">'
+      +(message||'Ouvrez la caisse avant d\'utiliser le POS.')+'</p>'
       +'<button id="wcpos-open-caisse-btn" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;font-weight:600;cursor:pointer">\uD83D\uDD13 Aller \u00e0 l\'onglet Caisse</button>';
     document.body.appendChild(ov);
     document.getElementById('wcpos-open-caisse-btn').addEventListener('click',function(){
       ov.style.display='none';
-      var sideBtns=Array.from(document.querySelectorAll('button[role="button"]')).filter(function(b){ var r=b.getBoundingClientRect(); return r.left<10&&r.top>0&&r.width>0; });
-      if (sideBtns[2]) sideBtns[2].click();
+      Array.from(document.querySelectorAll('button[role="button"]'))
+        .filter(function(b){ var r=b.getBoundingClientRect(); return r.left<10&&r.top>0&&r.width>0; })
+        [2]?.click();
     });
   }
 
@@ -244,10 +250,13 @@ const MAIN_JS = `
 
   function checkCaisse(){
     ajax('wcpos_caisse_status').then(function(data){
-      if (!!(data&&data.open)) { hideCaisseOverlay(); }
+      if (!!(data&&data.open)){ hideCaisseOverlay(); }
       else {
         showCaisseOverlay(data?data.message:'');
-        if (!isCustomPanelVisible()){ var ov=document.getElementById('wcpos-caisse-overlay'); if(ov) ov.style.setProperty('display','flex','important'); }
+        if (!isCustomPanelVisible()){
+          var ov=document.getElementById('wcpos-caisse-overlay');
+          if (ov) ov.style.setProperty('display','flex','important');
+        }
       }
     }).catch(function(){});
   }
@@ -257,13 +266,15 @@ const MAIN_JS = `
     else if (PANEL_WAS_SHOWN){ PANEL_WAS_SHOWN=false; checkCaisse(); }
   },300);
 
-  var caisseChecked=false;
   new MutationObserver(function(){
     injectPanel();
-    if (!caisseChecked&&document.getElementById('titlebar')){ caisseChecked=true; checkCaisse(); }
   }).observe(document.body,{childList:true,subtree:true});
 
+  checkCaisse();
   setInterval(checkCaisse,60000);
+
+  log('wcpos main injected OK');
+
 })();
 `;
 
@@ -309,59 +320,38 @@ export const createWindow = (): void => {
 
 	loadURL(mainWindow);
 
-	/* Bloque les changements de titre par React */
 	mainWindow.on('page-title-updated', (event) => {
 		event.preventDefault();
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	/* ── Fonction d'injection centrale ─────────────────────────────────────── */
-	let antiProInjected = false;
-	let mainInjected = false;
-
-	function runAntiPro() {
+	/* ── Injection via polling — seul mécanisme fiable sur wcpos:// ── */
+	function runInject() {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		mainWindow.webContents.executeJavaScript(ANTI_PRO_JS).catch((err) => {
-			log.error('Anti-pro failed:', err);
+		mainWindow.webContents.executeJavaScript(INJECT_JS).catch((err) => {
+			log.error('Injection failed:', err);
 		});
 	}
 
-	function runMain() {
-		if (!mainWindow || mainWindow.isDestroyed()) return;
-		mainWindow.webContents.executeJavaScript(MAIN_JS).catch((err) => {
-			log.error('Main injection failed:', err);
-		});
-	}
-
-	/* ── Déclencheurs multiples pour couvrir tous les cas ───────────────────── */
-
-	// 1. dom-ready (peut ne pas se déclencher sur wcpos://)
+	/* Événements natifs (backup) */
 	mainWindow.webContents.on('dom-ready', () => {
-		log.info('dom-ready fired');
 		mainWindow?.setTitle(APP_VERSION);
-		runAntiPro();
-		runMain();
+		runInject();
 	});
-
-	// 2. did-finish-load
 	mainWindow.webContents.on('did-finish-load', () => {
-		log.info('did-finish-load fired');
 		mainWindow?.setTitle(APP_VERSION);
-		runAntiPro();
-		runMain();
+		runInject();
 	});
+	mainWindow.webContents.on('did-navigate', () => runInject());
+	mainWindow.webContents.on('did-navigate-in-page', () => runInject());
 
-	// 3. did-navigate (navigations React router)
-	mainWindow.webContents.on('did-navigate', () => { runAntiPro(); });
-	mainWindow.webContents.on('did-navigate-in-page', () => { runAntiPro(); });
-
-	// 4. Polling agressif au démarrage (filet de sécurité absolu)
+	/* Polling toutes les 2s pendant 60s — garantit l'injection même si
+	   aucun événement ne se déclenche, et rattrape les re-renders tardifs */
 	let pollCount = 0;
 	const pollTimer = setInterval(() => {
 		if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(pollTimer); return; }
-		runAntiPro();
-		if (pollCount === 3) runMain(); // tente main à 6s
-		if (++pollCount >= 15) clearInterval(pollTimer); // arrête à 30s
+		runInject();
+		if (++pollCount >= 30) clearInterval(pollTimer);
 	}, 2000);
 
 	mainWindow.on('ready-to-show', () => {
