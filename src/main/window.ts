@@ -6,7 +6,6 @@ import serve from 'electron-serve';
 import { logger as log } from './log';
 import { isDevelopment } from './util';
 
-// Set up electron-serve
 let loadURL: (window: BrowserWindow) => void;
 
 if (isDevelopment) {
@@ -22,8 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-/* Version affichée dans la barre de titre — modifier à chaque build */
-const APP_VERSION = 'WCPOS Custom 1.2';
+const APP_VERSION = 'WCPOS Custom 1.3';
 
 export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
@@ -47,16 +45,15 @@ export const createWindow = (): void => {
 
 	loadURL(mainWindow);
 
-	/* Injection anti-pubs via executeJavaScript
-	 * - did-finish-load + délais progressifs pour les re-renders React
-	 * - MutationObserver pour les changements dynamiques
-	 * Note : insertCSS ne fonctionne pas sur le schéma wcpos://
-	 *        on injecte donc un <style> via JS
-	 */
+	/* Bloque les changements de titre par React/document.title */
+	mainWindow.on('page-title-updated', (event) => {
+		event.preventDefault();
+		mainWindow?.setTitle(APP_VERSION);
+	});
+
 	mainWindow.webContents.on('did-finish-load', () => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
-		/* Force le titre après chargement (React peut l'écraser) */
 		mainWindow.setTitle(APP_VERSION);
 
 		const js = `
@@ -71,25 +68,17 @@ export const createWindow = (): void => {
   ];
 
   function hide() {
-    /* Masque via setProperty (compatible SES/Lockdown) */
     HIDE.forEach(function(t) {
       document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
         el.style.setProperty('display', 'none', 'important');
       });
     });
-
-    /* Injecte le CSS dans <head> si pas encore fait */
     if (!document.getElementById('wcpos-anti-pro')) {
       var s = document.createElement('style');
       s.id = 'wcpos-anti-pro';
-      s.textContent = [
-        '[data-testid="upgrade-notice-banner"]',
-        '[data-testid="upgrade-title"]',
-        '[data-testid="upgrade-to-pro-button"]',
-        '[data-testid="view-demo-button"]',
-        '[data-testid="add-fee"]',
-        '[data-testid="add-shipping"]'
-      ].join(',') + '{display:none!important}';
+      s.textContent = HIDE.map(function(t){
+        return '[data-testid="' + t + '"]';
+      }).join(',') + '{display:none!important}';
       document.head.appendChild(s);
     }
   }
@@ -97,16 +86,19 @@ export const createWindow = (): void => {
   /* Exécution immédiate */
   hide();
 
-  /* Délais progressifs pour attraper les re-renders React */
-  [300, 800, 1500, 3000, 5000].forEach(function(ms) {
-    setTimeout(hide, ms);
-  });
+  /* Délais progressifs */
+  [300, 800, 1500, 3000].forEach(function(ms) { setTimeout(hide, ms); });
 
-  /* MutationObserver pour les changements dynamiques continus */
+  /* Polling toutes les 500ms — filet de sécurité contre React reconciliation */
+  setInterval(hide, 500);
+
+  /* MutationObserver étendu */
   if (window.MutationObserver) {
     new MutationObserver(hide).observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class', 'data-testid']
     });
   }
 })();
@@ -147,7 +139,6 @@ export const createWindow = (): void => {
 				return;
 			}
 			retryCount++;
-			log.info('Dev server not ready, retrying in 2s...');
 			setTimeout(() => {
 				if (mainWindow && !mainWindow.isDestroyed()) loadURL(mainWindow);
 			}, 2000);
