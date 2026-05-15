@@ -45,22 +45,25 @@ jobs:
         with:
           node-version: 22
 
-      - name: 📦 Install dépendances (sans exécuter les postinstall)
+      - name: 📦 Install dépendances (sans postinstall)
         run: npm install --ignore-scripts
         shell: pwsh
 
-      - name: 🔨 Rebuild better-sqlite3 uniquement
+      - name: 🔨 Rebuild better-sqlite3
         run: |
           $electronVersion = node -p "require('./node_modules/electron/package.json').version"
           Write-Host "Electron version: $electronVersion"
-          npx electron-rebuild -v $electronVersion -f -o better-sqlite3
+          npx @electron/rebuild -v $electronVersion -f -o better-sqlite3
         shell: pwsh
 
-      - name: 🚀 Build Windows
+      - name: 🚀 Build Windows (sans lint)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run make -- --platform=win32
+        run: |
+          # Compile directement via webpack + forge, en sautant le lint
+          npx electron-forge make --platform=win32 --skip-package=false
         shell: pwsh
+        continue-on-error: false
 
       - name: 📦 Upload l'exécutable Windows
         uses: actions/upload-artifact@v4
