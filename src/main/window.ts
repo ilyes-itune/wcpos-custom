@@ -22,21 +22,15 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-/* CSS anti-pubs sérialisé pour injection via createElement */
-const ANTI_PRO_CSS = `
-  [data-testid="upgrade-notice-banner"],
-  [data-testid="upgrade-title"],
-  [data-testid="upgrade-to-pro-button"],
-  [data-testid="view-demo-button"],
-  [data-testid="add-fee"],
-  [data-testid="add-shipping"] { display:none!important; }
-`;
+/* Version affichée dans la barre de titre — modifier à chaque build */
+const APP_VERSION = 'WCPOS Custom 1.2';
 
 export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
 		show: false,
 		width: 1024,
 		height: 728,
+		title: APP_VERSION,
 		icon: path.join(__dirname, '../../icons/icon.ico'),
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
@@ -53,37 +47,67 @@ export const createWindow = (): void => {
 
 	loadURL(mainWindow);
 
-	/* Injection via createElement — fonctionne sur le schéma wcpos:// */
+	/* Injection anti-pubs via executeJavaScript
+	 * - did-finish-load + délais progressifs pour les re-renders React
+	 * - MutationObserver pour les changements dynamiques
+	 * Note : insertCSS ne fonctionne pas sur le schéma wcpos://
+	 *        on injecte donc un <style> via JS
+	 */
 	mainWindow.webContents.on('did-finish-load', () => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
-		const css = ANTI_PRO_CSS.replace(/`/g, '\\`');
+		/* Force le titre après chargement (React peut l'écraser) */
+		mainWindow.setTitle(APP_VERSION);
 
 		const js = `
 (function() {
-  /* Injecte le CSS dans <head> */
-  if (!document.getElementById('wcpos-anti-pro')) {
-    var style = document.createElement('style');
-    style.id = 'wcpos-anti-pro';
-    style.textContent = \`${css}\`;
-    document.head.appendChild(style);
-  }
-
-  /* MutationObserver avec setProperty (compatible SES) */
   var HIDE = [
-    'upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
-    'view-demo-button','add-fee','add-shipping'
+    'upgrade-notice-banner',
+    'upgrade-title',
+    'upgrade-to-pro-button',
+    'view-demo-button',
+    'add-fee',
+    'add-shipping'
   ];
+
   function hide() {
+    /* Masque via setProperty (compatible SES/Lockdown) */
     HIDE.forEach(function(t) {
-      document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el) {
-        el.style.setProperty('display','none','important');
+      document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
+        el.style.setProperty('display', 'none', 'important');
       });
     });
+
+    /* Injecte le CSS dans <head> si pas encore fait */
+    if (!document.getElementById('wcpos-anti-pro')) {
+      var s = document.createElement('style');
+      s.id = 'wcpos-anti-pro';
+      s.textContent = [
+        '[data-testid="upgrade-notice-banner"]',
+        '[data-testid="upgrade-title"]',
+        '[data-testid="upgrade-to-pro-button"]',
+        '[data-testid="view-demo-button"]',
+        '[data-testid="add-fee"]',
+        '[data-testid="add-shipping"]'
+      ].join(',') + '{display:none!important}';
+      document.head.appendChild(s);
+    }
   }
+
+  /* Exécution immédiate */
   hide();
+
+  /* Délais progressifs pour attraper les re-renders React */
+  [300, 800, 1500, 3000, 5000].forEach(function(ms) {
+    setTimeout(hide, ms);
+  });
+
+  /* MutationObserver pour les changements dynamiques continus */
   if (window.MutationObserver) {
-    new MutationObserver(hide).observe(document.body, {childList:true, subtree:true});
+    new MutationObserver(hide).observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   }
 })();
 `;
@@ -92,7 +116,7 @@ export const createWindow = (): void => {
 			log.error('Anti-pro JS failed:', err);
 		});
 
-		log.info('Anti-pro injected');
+		log.info('Anti-pro injected — ' + APP_VERSION);
 	});
 
 	mainWindow.on('ready-to-show', () => {
@@ -123,6 +147,7 @@ export const createWindow = (): void => {
 				return;
 			}
 			retryCount++;
+			log.info('Dev server not ready, retrying in 2s...');
 			setTimeout(() => {
 				if (mainWindow && !mainWindow.isDestroyed()) loadURL(mainWindow);
 			}, 2000);
