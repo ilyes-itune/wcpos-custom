@@ -21,9 +21,9 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION   = 'WCPOS Custom 1.6';
-const WP_AJAX_URL   = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
-const WP_SITE_URL   = 'https://usmm-tir.fr';
+const APP_VERSION = 'WCPOS Custom 1.7';
+const WP_AJAX_URL = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
+const WP_SITE_URL = 'https://usmm-tir.fr';
 
 export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
@@ -50,7 +50,6 @@ export const createWindow = (): void => {
 		{ urls: [`${WP_SITE_URL}/*`] },
 		(details, callback) => {
 			const headers = { ...details.requestHeaders };
-			/* Assure que les cookies sont transmis */
 			callback({ requestHeaders: headers });
 		}
 	);
@@ -82,8 +81,8 @@ export const createWindow = (): void => {
 (function () {
   'use strict';
 
-  var AJAX_URL    = ${JSON.stringify(WP_AJAX_URL)};
-  var SITE_URL    = ${JSON.stringify(WP_SITE_URL)};
+  var AJAX_URL = ${JSON.stringify(WP_AJAX_URL)};
+  var SITE_URL = ${JSON.stringify(WP_SITE_URL)};
 
   var PANEL_TEXTS = {
     products:  'Ajustez les prix et quantités',
@@ -92,9 +91,28 @@ export const createWindow = (): void => {
     reports:   'Débloquez les rapports'
   };
 
-  var HIDE = [
-    'upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
-    'view-demo-button','add-fee','add-shipping'
+  /* ── Testids à masquer ───────────────────────────────── */
+  var HIDE_TESTIDS = [
+    'upgrade-notice-banner',
+    'upgrade-title',
+    'upgrade-to-pro-button',
+    'view-demo-button',
+    'add-fee',
+    'add-shipping'
+  ];
+
+  /* ── Textes Pro à masquer (éléments sans testid) ─────── */
+  var HIDE_TEXTS = [
+    'Passez à Pro',
+    'Passer à Pro',
+    'Passez à la version Pro',
+    'Upgrade to Pro',
+    'Profitez de plus avec Pro',
+    'Soutenez les mises à jour futures',
+    'Débloquez les rapports',
+    'Ajoutez de nouveaux clients et modifiez',
+    'Rouvrez et imprimez les reçus',
+    'Ajustez les prix et quantités'
   ];
 
   /* ── Ajax helper ─────────────────────────────────────── */
@@ -109,50 +127,97 @@ export const createWindow = (): void => {
 
   /* ── Anti-pubs ───────────────────────────────────────── */
   function hide() {
-    HIDE.forEach(function(t) {
+    /* Par testid */
+    HIDE_TESTIDS.forEach(function(t) {
       document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
         el.style.setProperty('display', 'none', 'important');
       });
     });
+
+    /* Par texte — masque le conteneur parent le plus proche */
+    HIDE_TEXTS.forEach(function(txt) {
+      document.querySelectorAll('*').forEach(function(el) {
+        if (el.children.length > 0) return; /* feuilles seulement */
+        var content = (el.textContent || '').trim();
+        if (content.indexOf(txt) === 0 || content === txt) {
+          /* Remonte jusqu'à un conteneur significatif */
+          var target = el;
+          for (var i = 0; i < 6; i++) {
+            var p = target.parentElement;
+            if (!p) break;
+            var r = p.getBoundingClientRect();
+            /* Arrête si le parent est trop grand (toute la page) */
+            if (r.width > window.innerWidth * 0.9) break;
+            target = p;
+          }
+          target.style.setProperty('display', 'none', 'important');
+        }
+      });
+    });
+
+    /* CSS statique (une seule fois) */
     if (!document.getElementById('wcpos-anti-pro')) {
       var s = document.createElement('style');
       s.id = 'wcpos-anti-pro';
-      s.textContent = HIDE.map(function(t){ return '[data-testid="'+t+'"]'; }).join(',') + '{display:none!important}';
-      document.head.appendChild(s);
+      s.textContent = HIDE_TESTIDS.map(function(t){
+        return '[data-testid="' + t + '"]';
+      }).join(',') + '{display:none!important}';
+      (document.head || document.documentElement).appendChild(s);
     }
   }
+
   hide();
   [300, 800, 1500, 3000].forEach(function(ms){ setTimeout(hide, ms); });
   setInterval(hide, 500);
-  if (window.MutationObserver) {
-    new MutationObserver(hide).observe(document.body, { childList:true, subtree:true, attributes:true });
-  }
 
   /* ── Injection panneaux custom ───────────────────────── */
   function findProPanel() {
-    var containers = document.querySelectorAll('.r-13awgt0');
+    /* Cherche par plusieurs classes car elles peuvent changer entre versions */
+    var candidates = [];
+    ['r-13awgt0', 'r-1p0dtai', 'r-6koalj', 'r-14lw9ot'].forEach(function(cls) {
+      document.querySelectorAll('.' + cls).forEach(function(el) {
+        candidates.push(el);
+      });
+    });
+    /* Déduplique */
+    candidates = candidates.filter(function(el, i, arr) { return arr.indexOf(el) === i; });
+
     var best = null, bestH = Infinity;
-    for (var i=0; i<containers.length; i++) {
-      var el = containers[i];
-      var r  = el.getBoundingClientRect();
-      if (r.width < 400 || r.height < 100) continue;
-      if (r.x > 200) continue;
-      if (r.width < window.innerWidth * 0.4) continue;
+    candidates.forEach(function(el) {
+      var r = el.getBoundingClientRect();
+      if (r.width < 400 || r.height < 100) return;
+      if (r.x > 200) return;
+      if (r.width < window.innerWidth * 0.4) return;
       var text = el.textContent || '';
       for (var pid in PANEL_TEXTS) {
         if (text.indexOf(PANEL_TEXTS[pid]) !== -1 && r.height < bestH) {
           bestH = r.height; best = { el:el, panelId:pid };
         }
       }
+    });
+
+    /* Fallback : cherche par texte directement */
+    if (!best) {
+      for (var pid in PANEL_TEXTS) {
+        document.querySelectorAll('*').forEach(function(el) {
+          if (best) return;
+          var r = el.getBoundingClientRect();
+          if (r.width < 400 || r.height < 100 || r.x > 200) return;
+          if ((el.textContent || '').indexOf(PANEL_TEXTS[pid]) !== -1 && r.height < bestH) {
+            bestH = r.height; best = { el:el, panelId:pid };
+          }
+        });
+      }
     }
+
     return best;
   }
 
   function loadPanel(panelId, wrapper) {
-    wrapper.innerHTML = '<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement…</p>';
+    wrapper.innerHTML = '<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
     ajax('wcpos_panel', { panel_id: panelId }).then(function(data) {
       if (!data || !data.html) {
-        wrapper.innerHTML = '<div style="padding:20px;background:#fce8e8;border-radius:6px;color:#8a1010;font-family:sans-serif">🔒 Connectez-vous à WordPress pour accéder à ce panneau.</div>';
+        wrapper.innerHTML = '<div style="padding:20px;background:#fce8e8;border-radius:6px;color:#8a1010;font-family:sans-serif">\uD83D\uDD12 Connectez-vous \u00e0 WordPress pour acc\u00e9der \u00e0 ce panneau.</div>';
         return;
       }
       wrapper.innerHTML = data.html;
@@ -161,7 +226,6 @@ export const createWindow = (): void => {
         ns.textContent = s.textContent;
         s.parentNode.replaceChild(ns, s);
       });
-      /* Intercepte formulaires POST */
       wrapper.querySelectorAll('form').forEach(function(form) {
         if ((form.method||'get').toLowerCase() === 'get') return;
         form.addEventListener('submit', function(e) {
@@ -176,7 +240,6 @@ export const createWindow = (): void => {
           });
         });
       });
-      /* Bind boutons navigation caisse */
       wrapper.querySelectorAll('[data-caisse-nav]:not([data-bound])').forEach(function(btn) {
         btn.setAttribute('data-bound','1');
         btn.addEventListener('click', function() {
@@ -246,12 +309,11 @@ export const createWindow = (): void => {
   setInterval(function() {
     if (!window._wcpos_action) return;
     var a = window._wcpos_action; window._wcpos_action = null;
-    if (a.type === 'nav')     reloadCaissePanel(a.view);
-    if (a.type === 'submit')  submitCaisseForm(a.action, a.data);
+    if (a.type === 'nav')      reloadCaissePanel(a.view);
+    if (a.type === 'submit')   submitCaisseForm(a.action, a.data);
     if (a.type === 'ponction') submitCaisseForm('ponction', a.data);
   }, 100);
 
-  /* Bind auto formulaires/boutons caisse à chaque mutation */
   new MutationObserver(function() {
     document.querySelectorAll('[data-caisse-form]:not([data-bound])').forEach(function(form) {
       form.setAttribute('data-bound','1');
@@ -282,11 +344,11 @@ export const createWindow = (): void => {
     var ov = document.createElement('div');
     ov.id  = 'wcpos-caisse-overlay';
     ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;color:#fff';
-    ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">🔒</div>'
-      + '<h2 style="font-size:1.2em;font-weight:700;margin:0 0 10px">Caisse fermée</h2>'
+    ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">\uD83D\uDD12</div>'
+      + '<h2 style="font-size:1.2em;font-weight:700;margin:0 0 10px">Caisse ferm\u00e9e</h2>'
       + '<p style="font-size:.9em;color:rgba(255,255,255,.8);max-width:360px;line-height:1.5;margin:0 0 20px">'
       + (message||'Ouvrez la caisse avant d\'utiliser le POS.') + '</p>'
-      + '<button id="wcpos-open-caisse-btn" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;font-weight:600;cursor:pointer">🔓 Aller à l\'onglet Caisse</button>';
+      + '<button id="wcpos-open-caisse-btn" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;font-weight:600;cursor:pointer">\uD83D\uDD13 Aller \u00e0 l\'onglet Caisse</button>';
     document.body.appendChild(ov);
     document.getElementById('wcpos-open-caisse-btn').addEventListener('click', function() {
       ov.style.display = 'none';
@@ -315,7 +377,6 @@ export const createWindow = (): void => {
     }).catch(function(){});
   }
 
-  /* Polling 300ms — détecte changement d'onglet */
   setInterval(function() {
     var panelVisible = isCustomPanelVisible();
     if (panelVisible) {
