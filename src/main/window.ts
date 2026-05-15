@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION   = 'WCPOS Custom 1.4';
+const APP_VERSION   = 'WCPOS Custom 1.5';
 const WP_AJAX_URL   = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
 const WP_SITE_URL   = 'https://usmm-tir.fr';
 
