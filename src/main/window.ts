@@ -23,6 +23,53 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
+/* ============================================================
+ * CSS anti-pubs — masque les éléments Pro identifiés par inspection
+ * data-testid confirmés sur WCPOS 1.8.x
+ * ============================================================ */
+const ANTI_PRO_CSS = `
+  [data-testid="upgrade-notice-banner"],
+  [data-testid="upgrade-title"],
+  [data-testid="upgrade-to-pro-button"],
+  [data-testid="view-demo-button"],
+  [data-testid="add-fee"],
+  [data-testid="add-shipping"] {
+    display: none !important;
+  }
+`;
+
+/* ============================================================
+ * JS anti-pubs — MutationObserver pour les re-renders React
+ * SES (Lockdown) note : style.setProperty() fonctionne
+ * ============================================================ */
+const ANTI_PRO_JS = `
+(function() {
+  var HIDE = [
+    'upgrade-notice-banner',
+    'upgrade-title',
+    'upgrade-to-pro-button',
+    'view-demo-button',
+    'add-fee',
+    'add-shipping'
+  ];
+
+  function hideProElements() {
+    HIDE.forEach(function(testid) {
+      document.querySelectorAll('[data-testid="' + testid + '"]').forEach(function(el) {
+        el.style.setProperty('display', 'none', 'important');
+      });
+    });
+  }
+
+  hideProElements();
+
+  if (window.MutationObserver) {
+    new MutationObserver(hideProElements)
+      .observe(document.body, { childList: true, subtree: true });
+  }
+})();
+`;
+
 export const createWindow = (): void => {
 	// Create the browser window.
 	mainWindow = new BrowserWindow({
@@ -33,8 +80,8 @@ export const createWindow = (): void => {
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
 			sandbox: false, // Required for preload script to work
-			nodeIntegration: false, // Prevent Node.js integration for security reasons
-			contextIsolation: true, // Protect against prototype pollution
+			nodeIntegration: false,
+			contextIsolation: true,
 		},
 		backgroundColor: '#fff',
 	});
@@ -45,6 +92,23 @@ export const createWindow = (): void => {
 
 	// Load the application
 	loadURL(mainWindow);
+
+	// ── Injection CSS/JS anti-pubs après chaque chargement de page ──────────
+	mainWindow.webContents.on('did-finish-load', () => {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
+
+		// Injecte le CSS
+		mainWindow.webContents.insertCSS(ANTI_PRO_CSS).catch((err) => {
+			log.error('insertCSS failed:', err);
+		});
+
+		// Injecte le JS
+		mainWindow.webContents.executeJavaScript(ANTI_PRO_JS).catch((err) => {
+			log.error('executeJavaScript failed:', err);
+		});
+
+		log.info('Anti-pro CSS/JS injected');
+	});
 
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) {
@@ -62,7 +126,6 @@ export const createWindow = (): void => {
 	});
 
 	// Open external URLs in the user's default browser
-	// Auth is now handled via IPC in auth-handler.ts
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 		log.info(`Opening in external browser: ${url}`);
 		shell.openExternal(url);
@@ -71,7 +134,7 @@ export const createWindow = (): void => {
 
 	// Handle failed loads
 	let retryCount = 0;
-	const MAX_RETRIES = 30; // ~60 seconds of retries
+	const MAX_RETRIES = 30;
 
 	mainWindow.webContents.on('did-fail-load', async (event, errorCode, errorDescription) => {
 		log.error(`did fail load with code ${errorCode}: ${errorDescription}`);
@@ -81,7 +144,6 @@ export const createWindow = (): void => {
 				return;
 			}
 			retryCount++;
-			// Metro dev server isn't ready yet — retry after a short delay
 			log.info('Dev server not ready, retrying in 2s...');
 			setTimeout(() => {
 				if (mainWindow && !mainWindow.isDestroyed()) {
