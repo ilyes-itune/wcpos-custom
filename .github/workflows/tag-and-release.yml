@@ -80,7 +80,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wcpos-windows
-          path: |
-            out/make/**/*.exe
-            out/make/**/*.msi
+          path: out/make/**/*
           if-no-files-found: warn
