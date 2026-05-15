@@ -8,10 +8,11 @@
     "noImplicitAny": true,
     "sourceMap": true,
     "baseUrl": ".",
+    "rootDir": ".",
     "outDir": "dist",
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "*": ["node_modules/*"]
     }
