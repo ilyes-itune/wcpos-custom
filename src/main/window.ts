@@ -21,9 +21,9 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION = 'WCPOS Custom 1.9';
-const WP_REST_URL = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
-const WP_SITE_URL = 'https://usmm-tir.fr';
+const APP_VERSION  = 'WCPOS Custom 2.0';
+const WP_SITE_URL  = 'https://usmm-tir.fr';
+const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
 export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
@@ -56,9 +56,9 @@ export const createWindow = (): void => {
 		{ urls: [WP_SITE_URL + '/*'] },
 		(details, callback) => {
 			const headers = { ...details.responseHeaders };
-			headers['Access-Control-Allow-Origin']      = ['wcpos://-'];
+			headers['Access-Control-Allow-Origin']  = ['wcpos://-'];
 			headers['Access-Control-Allow-Credentials'] = ['true'];
-			headers['Access-Control-Allow-Headers']     = ['Authorization, Content-Type, X-WP-Nonce'];
+			headers['Access-Control-Allow-Headers'] = ['Content-Type, X-WCPOS-Secret'];
 			callback({ responseHeaders: headers });
 		}
 	);
@@ -70,7 +70,7 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	/* ── BLOC 1 : Anti-pub + capture du token JWT ────────────────────────── */
+	/* ── Anti-pub (bloc indépendant, toujours injecté) ── */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const js = '(function(){'
@@ -86,48 +86,45 @@ export const createWindow = (): void => {
 			+ '  setInterval(hide,500);'
 			+ '  new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});'
 			+ '}'
-			/* Intercepte fetch pour capturer le token JWT de WCPOS */
-			+ 'if(!window.__tokenCapture){'
-			+ '  window.__tokenCapture=true;'
-			+ '  var _f=window.fetch;'
-			+ '  window.fetch=function(url,opts){'
-			+ '    try{'
-			+ '      if(url&&url.toString().indexOf("usmm-tir.fr")!==-1&&opts&&opts.headers){'
-			+ '        var h=opts.headers instanceof Headers?Object.fromEntries(opts.headers.entries()):opts.headers;'
-			+ '        var auth=h["Authorization"]||h["authorization"];'
-			+ '        if(auth&&auth.indexOf("Bearer ")===0){window.__wcpos_token=auth;}'
-			+ '      }'
-			+ '    }catch(e){}'
-			+ '    return _f.apply(this,arguments);'
-			+ '  };'
-			+ '}'
 			+ '})();';
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
-			log.error('Anti-pro failed: ' + err.message);
+			log.error('Anti-pro: ' + err.message);
 		});
 	}
 
-	/* ── BLOC 2 : Panneaux custom + caisse (via REST API + JWT) ──────────── */
+	/* ── Injection principale (panneaux + caisse) ────── */
 	function runMain(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		const restUrl = WP_REST_URL;
+		const restBase = WP_REST_BASE;
 		const js = '(function(){'
 			+ 'if(window.__mi)return;'
 			+ 'if(!document.getElementById("titlebar"))return;'
 			+ 'window.__mi=true;'
-			+ 'var REST="' + restUrl + '";'
+			+ 'var REST="' + restBase + '";'
 			+ 'var PT={'
 			+ '  products:"Ajustez les prix et quantit\u00e9s",'
 			+ '  orders:"Rouvrez et imprimez les re\u00e7us",'
 			+ '  customers:"Ajoutez de nouveaux clients",'
 			+ '  reports:"D\u00e9bloquez les rapports"'
 			+ '};'
-			/* Helper REST — utilise le token JWT capturé */
-			+ 'function restPost(endpoint,data){'
-			+ '  var headers={"Content-Type":"application/json"};'
-			+ '  if(window.__wcpos_token)headers["Authorization"]=window.__wcpos_token;'
-			+ '  return fetch(REST+endpoint,{method:"POST",headers:headers,body:JSON.stringify(data),credentials:"include"})'
-			+ '    .then(function(r){return r.json();});'
+			/* Récupère le secret via /bootstrap (requiert session WP) */
+			/* Si échec, on retente toutes les 5s jusqu'à avoir le secret */
+			+ 'function fetchSecret(cb){'
+			+ '  if(window.__secret){cb(window.__secret);return;}'
+			+ '  fetch(REST+"/bootstrap",{credentials:"include"})'
+			+ '  .then(function(r){return r.json();})'
+			+ '  .then(function(d){if(d&&d.secret){window.__secret=d.secret;cb(d.secret);}else{setTimeout(function(){fetchSecret(cb);},5000);}})'
+			+ '  .catch(function(){setTimeout(function(){fetchSecret(cb);},5000);});'
+			+ '}'
+			/* Helper REST avec secret */
+			+ 'function restPost(ep,data,cb){'
+			+ '  fetchSecret(function(secret){'
+			+ '    var body=Object.assign({secret:secret},data);'
+			+ '    fetch(REST+ep,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"include"})'
+			+ '    .then(function(r){return r.json();})'
+			+ '    .then(cb)'
+			+ '    .catch(function(e){cb({error:e.message});});'
+			+ '  });'
 			+ '}'
 			+ 'function findPanel(){'
 			+ '  var best=null,bestH=Infinity;'
@@ -145,12 +142,12 @@ export const createWindow = (): void => {
 			+ 'function loadPanel(pid,wrap,cview){'
 			+ '  wrap.innerHTML="<p style=\'padding:20px;color:#646970\'>Chargement...</p>";'
 			+ '  var body={panel_id:pid};if(cview)body.caisse_view=cview;'
-			+ '  restPost("/panel",body).then(function(d){'
-			+ '    if(!d||!d.html){wrap.innerHTML="<p style=\'padding:20px;color:#c00\'>\uD83D\uDD12 Erreur : "+(d&&d.message?d.message:"non autorisé")+"</p>";return;}'
+			+ '  restPost("/panel",body,function(d){'
+			+ '    if(!d||!d.html){wrap.innerHTML="<p style=\'padding:20px;color:#c00\'>"+(d&&d.error?d.error:"Erreur")+"</p>";return;}'
 			+ '    wrap.innerHTML=d.html;'
 			+ '    wrap.querySelectorAll("script").forEach(function(s){var ns=document.createElement("script");ns.textContent=s.textContent;s.parentNode.replaceChild(ns,s);});'
 			+ '    bind(wrap);'
-			+ '  }).catch(function(e){wrap.innerHTML="<p style=\'padding:20px;color:#c00\'>Erreur: "+e.message+"</p>";});'
+			+ '  });'
 			+ '}'
 			+ 'function bind(root){'
 			+ '  root.querySelectorAll("[data-caisse-nav]:not([data-bound])").forEach(function(b){'
@@ -168,7 +165,8 @@ export const createWindow = (): void => {
 			+ '}'
 			+ 'var inj=false,curPid=null,curWrap=null;'
 			+ 'function injectPanel(){'
-			+ '  if(inj)return;var found=findPanel();if(!found)return;'
+			+ '  if(inj)return;'
+			+ '  var found=findPanel();if(!found)return;'
 			+ '  var el=found.el,pid=found.pid;'
 			+ '  var ex=el.querySelector("#wpp");'
 			+ '  if(ex&&ex.getAttribute("data-pid")===pid)return;'
@@ -182,17 +180,19 @@ export const createWindow = (): void => {
 			+ 'window.__ca=null;'
 			+ 'function submitCaisse(action,data){'
 			+ '  var body=Object.assign({wcpos_caisse_action:action},data);'
-			+ '  restPost("/caisse/submit",body).then(function(){'
+			+ '  restPost("/caisse/submit",body,function(){'
 			+ '    if(curWrap&&curPid)loadPanel(curPid,curWrap,"dashboard");'
 			+ '    setTimeout(chkCaisse,400);'
 			+ '  });'
 			+ '}'
 			+ 'setInterval(function(){'
-			+ '  if(!window.__ca)return;var a=window.__ca;window.__ca=null;'
+			+ '  if(!window.__ca)return;'
+			+ '  var a=window.__ca;window.__ca=null;'
 			+ '  if(a.type==="nav"&&curWrap&&curPid)loadPanel(curPid,curWrap,a.view);'
 			+ '  if(a.type==="submit")submitCaisse(a.action,a.data);'
 			+ '},100);'
 			+ 'new MutationObserver(function(){bind(document.body);}).observe(document.body,{childList:true,subtree:true});'
+			/* Overlay caisse */
 			+ 'var pws=false;'
 			+ 'function hasPP(){return !!document.getElementById("wpp");}'
 			+ 'function showOv(msg){'
@@ -202,7 +202,7 @@ export const createWindow = (): void => {
 			+ '  ov.innerHTML="<div style=\'font-size:3em;margin-bottom:14px\'>\uD83D\uDD12</div>"'
 			+ '    +"<h2 style=\'font-size:1.2em;font-weight:700;margin:0 0 10px\'>Caisse ferm\u00e9e</h2>"'
 			+ '    +"<p style=\'font-size:.9em;opacity:.8;max-width:360px;line-height:1.5;margin:0 0 20px\'>"+(msg||"Ouvrez la caisse avant d\'utiliser le POS.")+"</p>"'
-			+ '    +"<button id=\'wcb\' style=\'background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;font-weight:600;cursor:pointer\'>\uD83D\uDD13 Aller \u00e0 l\'onglet Caisse</button>";'
+			+ '    +"<button id=\'wcb\' style=\'background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;cursor:pointer\'>\uD83D\uDD13 Aller \u00e0 l\'onglet Caisse</button>";'
 			+ '  document.body.appendChild(ov);'
 			+ '  var btn=document.getElementById("wcb");'
 			+ '  if(btn){btn.addEventListener("click",function(){'
@@ -213,24 +213,27 @@ export const createWindow = (): void => {
 			+ '}'
 			+ 'function hideOv(){var ov=document.getElementById("wco");if(ov)ov.style.setProperty("display","none","important");}'
 			+ 'function chkCaisse(){'
-			+ '  restPost("/caisse/status",{}).then(function(d){'
-			+ '    if(d&&d.open){hideOv();}'
-			+ '    else{showOv(d?d.message:"");if(!hasPP()){var ov=document.getElementById("wco");if(ov)ov.style.setProperty("display","flex","important");}}'
-			+ '  }).catch(function(){});'
+			+ '  restPost("/caisse/status",{},function(d){'
+			/* Ne montre l'overlay QUE si on a une réponse claire "fermée" */
+			+ '    if(!d||d.error)return;'
+			+ '    if(d.open){hideOv();}'
+			+ '    else if(!hasPP()){showOv(d.message);var ov=document.getElementById("wco");if(ov)ov.style.setProperty("display","flex","important");}'
+			+ '  });'
 			+ '}'
 			+ 'setInterval(function(){'
 			+ '  if(hasPP()){hideOv();pws=true;}else if(pws){pws=false;chkCaisse();}'
 			+ '},300);'
 			+ 'new MutationObserver(function(){injectPanel();}).observe(document.body,{childList:true,subtree:true});'
-			+ 'chkCaisse();setInterval(chkCaisse,60000);'
-			+ 'console.log("wcpos main OK — token:"+(window.__wcpos_token?"oui":"en attente"));'
+			/* Démarre la caisse après avoir le secret */
+			+ 'fetchSecret(function(){chkCaisse();});'
+			+ 'setInterval(chkCaisse,60000);'
+			+ 'console.log("wcpos 2.0 OK");'
 			+ '})();';
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
-			log.error('Main inject failed: ' + err.message);
+			log.error('Main inject: ' + err.message);
 		});
 	}
 
-	/* Déclencheurs */
 	mainWindow.webContents.on('dom-ready', () => {
 		mainWindow?.setTitle(APP_VERSION);
 		runAntiPro();
@@ -270,7 +273,7 @@ export const createWindow = (): void => {
 	const MAX_RETRIES = 30;
 
 	mainWindow.webContents.on('did-fail-load', async (event, errorCode, errorDescription) => {
-		log.error('did fail load ' + errorCode + ': ' + errorDescription);
+		log.error('did-fail-load ' + errorCode + ': ' + errorDescription);
 		if (errorDescription === 'ERR_CONNECTION_REFUSED') {
 			if (retryCount >= MAX_RETRIES) { log.error('Max retries reached'); return; }
 			retryCount++;
