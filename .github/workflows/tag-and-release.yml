@@ -64,6 +64,13 @@ jobs:
           npx electron-forge make --platform=win32 --skip-package=false
         shell: pwsh
         continue-on-error: false
+       
+       - name: 📋 Upload build log en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-log.txt
 
       - name: 📦 Upload l'exécutable Windows
         uses: actions/upload-artifact@v4
