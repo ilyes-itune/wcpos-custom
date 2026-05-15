@@ -1,165 +1,71 @@
 name: Publish
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       platform:
-        description: 'Select the platform to build and publish'
+        description: 'Plateforme à compiler'
         required: true
-        default: 'all'
+        default: 'windows'
         type: choice
         options:
-          - all
-          - macos
-          - macos-arm64
           - windows
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.platform || 'push' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  build-expo:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'macos-arm64' || github.event.inputs.platform == 'windows' }}
-
-    steps:
-      - name: 📥 Check out the Monorepo repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: wcpos/monorepo
-
-      - name: 🏗 Setup Monorepo
-        uses: wcpos/monorepo/.github/actions/setup-monorepo@main
-        with:
-          rxdb-license-key: ${{ secrets.RXDB_LICENSE_KEY }}
-          uniwind-auth-token: ${{ secrets.UNIWIND_AUTH_TOKEN }}
-
-      - name: 🔨 Build Expo for Electron
-        run: pnpm --filter @wcpos/main build:electron
-
-      - name: 📦 Archive production artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: expo-dist
-          path: apps/main/electron-build
-
-  publish-macos:
-    needs: build-expo
-    runs-on: macos-15-intel
-    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
-
-    steps:
-      - name: Check out Git repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: 📦 Download expo-dist artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: expo-dist
-          path: dist
-
-      - name: 🏗 Install Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-
-      - name: Install Python setuptools
-        run: python3 -m pip install --break-system-packages setuptools
-
-      - name: 🔐 Signing By Apple Developer ID
-        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
-        with:
-          p12-file-base64: ${{ secrets.MAC_CERTS }}
-          p12-password: ${{ secrets.MAC_CERTS_PASSWORD }}
-
-      - name: 📦 Install and rebuild native modules
-        run: |
-          npm install
-          npm run rebuild:all
-
-      - name: 🚀 Publish MacOS x64 release
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run publish-app
-
-  publish-macos-arm64:
-    needs:
-      - build-expo
-      # - publish-macos
-    runs-on: macos-latest
-    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos-arm64' }}
-
-    steps:
-      - name: Check out Git repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: 📦 Download expo-dist artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: expo-dist
-          path: dist
-
-      - name: 🏗 Install Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-
-      - name: 🔐 Signing By Apple Developer ID
-        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
-        with:
-          p12-file-base64: ${{ secrets.MAC_CERTS }}
-          p12-password: ${{ secrets.MAC_CERTS_PASSWORD }}
-
-      - name: 📦 Install and rebuild native modules
-        run: |
-          npm install
-          npm run rebuild:all
-
-      - name: 🚀 Publish MacOS arm64 release
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ARCH: arm64
-        run: npm run publish-app -- --arch=arm64 --platform=darwin
-
   publish-windows:
-    needs: build-expo
     runs-on: windows-latest
-    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows' }}
 
     steps:
-      - name: Check out Git repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: 📥 Checkout du fork
+        uses: actions/checkout@v4
 
-      - name: 📦 Download expo-dist artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: expo-dist
-          path: dist
+      - name: 📦 Télécharge le bundle depuis la release du fork
+        run: |
+          # Télécharge le zip depuis la release bundle-v1.8.9
+          Invoke-WebRequest `
+            -Uri "https://github.com/ilyes-itune/wcpos-custom/releases/download/bundle-v1.8.9/wcpos-dist.zip" `
+            -OutFile "wcpos-dist.zip" `
+            -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
 
-      - name: 🏗 Install Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+          # Extrait dans dist/
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Expand-Archive -Path "wcpos-dist.zip" -DestinationPath dist -Force
+
+          Write-Host "Contenu du dist :"
+          Get-ChildItem dist | Select-Object Name
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+
+      - name: 🏗 Install Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: 📦 Install and rebuild native modules
+      - name: 📦 Install et rebuild modules natifs
         run: |
           npm install
           npm run rebuild:all
+        shell: pwsh
 
-      - name: 🚀 Publish Windows release
+      - name: 🚀 Build Windows
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run publish-app
+        run: npm run make -- --platform=win32
+        shell: pwsh
+
+      - name: 📦 Upload l'exécutable Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: wcpos-windows
+          path: |
+            out/make/**/*.exe
+            out/make/**/*.msi
+          if-no-files-found: warn
