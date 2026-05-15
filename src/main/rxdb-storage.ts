@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import fs from 'fs';
 import path from 'path';
 
