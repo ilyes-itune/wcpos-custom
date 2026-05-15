@@ -28,16 +28,12 @@ jobs:
 
       - name: 📦 Télécharge le bundle depuis la release du fork
         run: |
-          # Télécharge le zip depuis la release bundle-v1.8.9
           Invoke-WebRequest `
             -Uri "https://github.com/ilyes-itune/wcpos-custom/releases/download/bundle-v1.8.9/wcpos-dist.zip" `
             -OutFile "wcpos-dist.zip" `
             -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
-
-          # Extrait dans dist/
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Expand-Archive -Path "wcpos-dist.zip" -DestinationPath dist -Force
-
           Write-Host "Contenu du dist :"
           Get-ChildItem dist | Select-Object Name
         env:
@@ -49,10 +45,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: 📦 Install et rebuild modules natifs
+      - name: 📦 Install dépendances (sans exécuter les postinstall)
+        run: npm install --ignore-scripts
+        shell: pwsh
+
+      - name: 🔨 Rebuild better-sqlite3 uniquement
         run: |
-          npm install
-          npm run rebuild:all
+          $electronVersion = node -p "require('./node_modules/electron/package.json').version"
+          Write-Host "Electron version: $electronVersion"
+          npx electron-rebuild -v $electronVersion -f -o better-sqlite3
         shell: pwsh
 
       - name: 🚀 Build Windows
