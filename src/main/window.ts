@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.1';
+const APP_VERSION  = 'WCPOS Custom 2.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -52,14 +52,11 @@ export const createWindow = (): void => {
 		}
 	);
 
-	/* Corrige le CORS — supprime tous les headers CORS existants
-	   (WordPress en ajoute déjà un, ce qui crée un doublon invalide)
-	   puis injecte un seul header propre. */
+	/* CORS — supprime les headers existants avant d'injecter un seul propre */
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(details, callback) => {
 			const headers: Record<string, string[]> = {};
-			/* Copie tous les headers sauf les headers CORS qu'on va réécrire */
 			for (const [key, value] of Object.entries(details.responseHeaders ?? {})) {
 				if (!['access-control-allow-origin',
 				      'access-control-allow-credentials',
@@ -68,7 +65,6 @@ export const createWindow = (): void => {
 					headers[key] = value as string[];
 				}
 			}
-			/* Injecte des headers CORS propres */
 			headers['Access-Control-Allow-Origin']      = ['wcpos://-'];
 			headers['Access-Control-Allow-Credentials'] = ['true'];
 			headers['Access-Control-Allow-Methods']     = ['GET, POST, OPTIONS'];
@@ -84,7 +80,7 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	/* ── Anti-pub ─────────────────────────────────────────────────────────── */
+	/* ── Anti-pub ────────────────────────────────────────────────────────── */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const js = '(function(){'
@@ -108,112 +104,206 @@ export const createWindow = (): void => {
 		});
 	}
 
-	/* ── Panneaux custom + caisse ─────────────────────────────────────────── */
+	/* ── Panneaux custom + caisse ────────────────────────────────────────
+	   window._wcpos_action : même variable que le snippet WPCode caisse
+	   Le snippet gère ses propres nav/form via wcpos_caisse_nav_js()
+	   On intercepte le même flag pour soumettre via REST ──────────────── */
 	function runMain(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const REST = WP_REST_BASE;
 		const js = '(function(){'
+
+			/* Guard : POS actif = search-products présent */
+			+ 'var inPos=!!document.querySelector(\'[data-testid="search-products"]\');'
+			+ 'if(!inPos){if(window.__mi){window.__mi=false;}return;}'
 			+ 'if(window.__mi)return;'
-			+ 'if(!document.getElementById("titlebar"))return;'
 			+ 'window.__mi=true;'
 			+ 'var REST="' + REST + '";'
+
+			/* Textes Pro des panneaux à remplacer
+			   "customers" = onglet Clients qui affiche le snippet caisse */
 			+ 'var PT={'
-			+ '"products":"Ajustez les prix et quantit\u00e9s",'
-			+ '"orders":"Rouvrez et imprimez les re\u00e7us",'
-			+ '"customers":"Ajoutez de nouveaux clients",'
-			+ '"reports":"D\u00e9bloquez les rapports"'
+			+ '  "products":"Ajustez les prix",'
+			+ '  "orders":"Rouvrez et imprimez",'
+			+ '  "customers":"Ajoutez de nouveaux clients",'
+			+ '  "reports":"Debloquez les rapports"'
 			+ '};'
+
+			/* REST helper */
 			+ 'function rp(ep,data,cb){'
-			+ 'fetch(REST+ep,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data),credentials:"include"})'
-			+ '.then(function(r){return r.json();})'
-			+ '.then(cb)'
-			+ '.catch(function(e){cb({error:e.message});});'
+			+ '  fetch(REST+ep,{method:"POST",headers:{"Content-Type":"application/json"},'
+			+ '  body:JSON.stringify(data),credentials:"include"})'
+			+ '  .then(function(r){return r.json();})'
+			+ '  .then(cb)'
+			+ '  .catch(function(e){cb({error:e.message});});'
 			+ '}'
+
+			/* Trouve le conteneur Pro */
 			+ 'function findPanel(){'
-			+ 'var best=null,bestH=Infinity;'
-			+ 'document.querySelectorAll("*").forEach(function(el){'
-			+ 'var r=el.getBoundingClientRect();'
-			+ 'if(r.width<400||r.height<100||r.x>200||r.width<window.innerWidth*0.4)return;'
-			+ 'for(var pid in PT){'
-			+ 'if((el.textContent||"").indexOf(PT[pid])!==-1&&r.height<bestH){'
-			+ 'bestH=r.height;best={el:el,pid:pid};}}'
-			+ '});return best;}'
+			+ '  var best=null,bestScore=0;'
+			+ '  document.querySelectorAll("div,section,aside").forEach(function(el){'
+			+ '    var r=el.getBoundingClientRect();'
+			+ '    if(r.width<300||r.height<80||r.x>300)return;'
+			+ '    if(r.width<window.innerWidth*0.3)return;'
+			+ '    if(el.querySelector("#wpp"))return;'
+			+ '    var txt=el.textContent||"";'
+			+ '    for(var pid in PT){'
+			+ '      if(txt.indexOf(PT[pid])!==-1){'
+			+ '        var score=r.width*r.height;'
+			+ '        if(score>bestScore){bestScore=score;best={el:el,pid:pid};}'
+			+ '      }'
+			+ '    }'
+			+ '  });'
+			+ '  return best;'
+			+ '}'
+
+			/* Charge le HTML du panneau — ré-exécute les scripts inline
+			   (dont wcpos_caisse_nav_js du snippet qui gère data-caisse-nav) */
 			+ 'function loadPanel(pid,wrap,cv){'
-			+ 'wrap.innerHTML="<p style=\'padding:20px;color:#646970\'>Chargement...</p>";'
-			+ 'var body={panel_id:pid};if(cv)body.caisse_view=cv;'
-			+ 'rp("/panel",body,function(d){'
-			+ 'if(!d||!d.html){wrap.innerHTML="<p style=\'padding:20px;color:#c00\'>"+(d&&d.error?d.error:"Erreur")+"</p>";return;}'
-			+ 'wrap.innerHTML=d.html;'
-			+ 'wrap.querySelectorAll("script").forEach(function(s){var ns=document.createElement("script");ns.textContent=s.textContent;s.parentNode.replaceChild(ns,s);});'
-			+ 'bind(wrap);});}'
-			+ 'function bind(root){'
-			+ 'root.querySelectorAll("[data-caisse-nav]:not([data-bound])").forEach(function(b){'
-			+ 'b.setAttribute("data-bound","1");'
-			+ 'b.addEventListener("click",function(){window.__ca={type:"nav",view:b.getAttribute("data-caisse-nav")||""};});});'
-			+ 'root.querySelectorAll("[data-caisse-form]:not([data-bound])").forEach(function(f){'
-			+ 'f.setAttribute("data-bound","1");'
-			+ 'f.addEventListener("submit",function(e){'
-			+ 'e.preventDefault();var ft=f.getAttribute("data-caisse-form");'
-			+ 'var fd={};new FormData(f).forEach(function(v,k){fd[k]=v;});'
-			+ 'window.__ca={type:"submit",action:ft,data:fd};});});}'
-			+ 'var inj=false,cPid=null,cWrap=null;'
+			+ '  wrap.innerHTML="<p style=\'padding:20px;color:#646970;font-family:sans-serif\'>Chargement...</p>";'
+			+ '  var body={panel_id:pid};if(cv)body.caisse_view=cv;'
+			+ '  rp("/panel",body,function(d){'
+			+ '    if(!d||!d.html){'
+			+ '      wrap.innerHTML="<p style=\'padding:20px;color:#c00;font-family:sans-serif\'>"+(d&&d.error?d.error:"Erreur")+"</p>";'
+			+ '      return;'
+			+ '    }'
+			+ '    wrap.innerHTML=d.html;'
+			/* Ré-exécute les scripts (dont wcpos_caisse_nav_js du snippet) */
+			+ '    wrap.querySelectorAll("script").forEach(function(s){'
+			+ '      var ns=document.createElement("script");'
+			+ '      ns.textContent=s.textContent;'
+			+ '      s.parentNode.replaceChild(ns,s);'
+			+ '    });'
+			+ '  });'
+			+ '}'
+
+			/* Injection du panneau */
+			+ 'var injecting=false,cPid=null,cWrap=null;'
 			+ 'function injectPanel(){'
-			+ 'if(inj)return;var found=findPanel();if(!found)return;'
-			+ 'var el=found.el,pid=found.pid;'
-			+ 'var ex=el.querySelector("#wpp");'
-			+ 'if(ex&&ex.getAttribute("data-pid")===pid)return;'
-			+ 'if(ex){ex.setAttribute("data-pid",pid);cPid=pid;cWrap=ex;loadPanel(pid,ex);return;}'
-			+ 'inj=true;el.innerHTML="";'
-			+ 'el.style.cssText="display:flex;flex-direction:column;flex:1;padding:0;overflow:hidden;";'
-			+ 'var w=document.createElement("div");w.id="wpp";w.setAttribute("data-pid",pid);'
-			+ 'el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w);'
-			+ 'setTimeout(function(){inj=false;},500);}'
-			+ 'window.__ca=null;'
-			+ 'function submitC(action,data){'
-			+ 'var body=Object.assign({wcpos_caisse_action:action},data);'
-			+ 'rp("/caisse/submit",body,function(){'
-			+ 'if(cWrap&&cPid)loadPanel(cPid,cWrap,"dashboard");'
-			+ 'setTimeout(chkC,400);});}'
+			+ '  if(injecting)return;'
+			+ '  if(!document.querySelector(\'[data-testid="search-products"]\'))return;'
+			+ '  var found=findPanel();if(!found)return;'
+			+ '  var el=found.el,pid=found.pid;'
+			+ '  var ex=el.querySelector("#wpp");'
+			+ '  if(ex&&ex.getAttribute("data-pid")===pid)return;'
+			+ '  if(ex){ex.setAttribute("data-pid",pid);cPid=pid;cWrap=ex;loadPanel(pid,ex);return;}'
+			+ '  injecting=true;'
+			+ '  el.innerHTML="";'
+			+ '  el.style.cssText="display:flex;flex-direction:column;flex:1;padding:0;overflow:auto;";'
+			+ '  var w=document.createElement("div");'
+			+ '  w.id="wpp";w.setAttribute("data-pid",pid);'
+			+ '  el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w);'
+			+ '  setTimeout(function(){injecting=false;},600);'
+			+ '}'
+
+			/* Traitement des actions caisse via window._wcpos_action
+			   Compatible avec le snippet WPCode qui utilise la même variable */
+			+ 'window._wcpos_action=null;'
+
+			+ 'function submitCaisse(action,data){'
+			/* Convertit FormData en objet plat si nécessaire */
+			+ '  var fd={};'
+			+ '  if(data&&typeof data.forEach==="function"){'
+			+ '    data.forEach(function(v,k){fd[k]=v;});'
+			+ '  } else if(data&&typeof data==="object"){'
+			+ '    fd=data;'
+			+ '  }'
+			+ '  var body=Object.assign({wcpos_caisse_action:action},fd);'
+			+ '  rp("/caisse/submit",body,function(d){'
+			+ '    if(cWrap&&cPid)loadPanel(cPid,cWrap,"dashboard");'
+			+ '    setTimeout(chkCaisse,400);'
+			+ '  });'
+			+ '}'
+
+			/* Polling : intercepte window._wcpos_action (snippet + notre JS) */
 			+ 'setInterval(function(){'
-			+ 'if(!window.__ca)return;var a=window.__ca;window.__ca=null;'
-			+ 'if(a.type==="nav"&&cWrap&&cPid)loadPanel(cPid,cWrap,a.view);'
-			+ 'if(a.type==="submit")submitC(a.action,a.data);},100);'
-			+ 'new MutationObserver(function(){bind(document.body);}).observe(document.body,{childList:true,subtree:true});'
-			+ 'var pws=false;'
-			+ 'function hasPP(){return !!document.getElementById("wpp");}'
-			+ 'function showOv(msg){'
-			+ 'if(document.getElementById("wco"))return;'
-			+ 'var ov=document.createElement("div");ov.id="wco";'
-			+ 'ov.style.cssText="position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;color:#fff";'
-			+ 'ov.innerHTML="<div style=\'font-size:3em;margin-bottom:14px\'>&#128274;</div>"'
-			+ '+"<h2 style=\'font-size:1.2em;font-weight:700;margin:0 0 10px\'>Caisse ferm\u00e9e</h2>"'
-			+ '+"<p style=\'font-size:.9em;opacity:.8;max-width:360px;line-height:1.5;margin:0 0 20px\'>"+(msg||"Ouvrez la caisse avant d\'utiliser le POS.")+"</p>"'
-			+ '+"<button id=\'wcb\' style=\'background:#00a32a;color:#fff;border:none;padding:10px 22px;border-radius:6px;font-size:.95em;cursor:pointer\'>&#128275; Aller a l\'onglet Caisse</button>";'
-			+ 'document.body.appendChild(ov);'
-			+ 'var btn=document.getElementById("wcb");'
-			+ 'if(btn){btn.addEventListener("click",function(){'
-			+ 'ov.style.display="none";'
-			+ 'var btns=Array.from(document.querySelectorAll(\'button[role="button"]\')).filter(function(b){var r=b.getBoundingClientRect();return r.left<10&&r.top>0&&r.width>0;});'
-			+ 'if(btns[2])btns[2].click();});}}'
-			+ 'function hideOv(){var ov=document.getElementById("wco");if(ov)ov.style.setProperty("display","none","important");}'
-			+ 'function chkC(){'
-			+ 'rp("/caisse/status",{},function(d){'
-			+ 'if(!d||d.error)return;'
-			+ 'if(d.open){hideOv();}'
-			+ 'else if(!hasPP()){showOv(d.message);var ov=document.getElementById("wco");if(ov)ov.style.setProperty("display","flex","important");}});}'
-			+ 'setInterval(function(){'
-			+ 'if(hasPP()){hideOv();pws=true;}else if(pws){pws=false;chkC();}},300);'
+			+ '  if(!window._wcpos_action)return;'
+			+ '  var a=window._wcpos_action;window._wcpos_action=null;'
+			+ '  if(a.type==="nav"&&cWrap&&cPid)loadPanel(cPid,cWrap,a.view);'
+			+ '  if(a.type==="submit")submitCaisse(a.action,a.data);'
+			+ '},100);'
+
 			+ 'new MutationObserver(function(){injectPanel();}).observe(document.body,{childList:true,subtree:true});'
-			+ 'chkC();setInterval(chkC,60000);'
-			+ 'console.log("wcpos 2.1 OK");'
+
+			/* Overlay caisse fermée */
+			+ 'function hasPP(){return !!document.getElementById("wpp");}'
+			+ 'function inPOS(){return !!document.querySelector(\'[data-testid="search-products"]\');}'
+
+			+ 'function showOverlay(msg){'
+			+ '  if(document.getElementById("wco"))return;'
+			+ '  var ov=document.createElement("div");ov.id="wco";'
+			+ '  ov.style.cssText="position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
+			+                      'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+			+                      'text-align:center;padding:24px;font-family:sans-serif;color:#fff";'
+			+ '  ov.innerHTML='
+			+ '    "<div style=\'font-size:3em;margin-bottom:14px\'>&#128274;</div>"'
+			+ '    +"<h2 style=\'font-size:1.2em;font-weight:700;margin:0 0 8px\'>Caisse fermee</h2>"'
+			+ '    +"<p style=\'font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0\'>"'
+			+ '      +(msg||"Ouvrez la caisse avant d\'utiliser le POS.")+"</p>"'
+			+ '    +"<button id=\'wcb\' style=\'background:#00a32a;color:#fff;border:none;padding:10px 22px;'
+			+         'border-radius:6px;font-size:.95em;cursor:pointer;margin-top:16px\'>"'
+			+ '    +"&#128275; Aller a l\'onglet Clients</button>";'
+			+ '  document.body.appendChild(ov);'
+			+ '  var btn=document.getElementById("wcb");'
+			+ '  if(btn){btn.addEventListener("click",function(){'
+			+ '    ov.remove();'
+			/* Cherche le bouton "Clients" dans la navigation */
+			+ '    var navBtns=Array.from(document.querySelectorAll(\'nav button,aside button,[role="tablist"] button,[role="tab"]\'));'
+			+ '    var caisseBtn=navBtns.find(function(b){'
+			+ '      var t=(b.textContent||b.getAttribute("aria-label")||"").toLowerCase();'
+			+ '      return t.indexOf("client")!==-1||t.indexOf("caisse")!==-1;'
+			+ '    });'
+			+ '    if(caisseBtn){caisseBtn.click();return;}'
+			/* Fallback 3ème bouton sidebar gauche */
+			+ '    var sideBtns=Array.from(document.querySelectorAll(\'button[role="button"]\')).filter(function(b){'
+			+ '      var r=b.getBoundingClientRect();return r.left<10&&r.top>0&&r.width>0;'
+			+ '    });'
+			+ '    if(sideBtns[2])sideBtns[2].click();'
+			+ '  });}'
+			+ '}'
+
+			+ 'function hideOverlay(){'
+			+ '  var ov=document.getElementById("wco");'
+			+ '  if(ov)ov.style.setProperty("display","none","important");'
+			+ '}'
+
+			+ 'function chkCaisse(){'
+			+ '  if(!inPOS())return;'
+			+ '  rp("/caisse/status",{},function(d){'
+			+ '    if(!d||d.error)return;'
+			+ '    if(d.open){hideOverlay();}'
+			+ '    else if(!hasPP()){showOverlay(d.message);'
+			+ '      var ov=document.getElementById("wco");'
+			+ '      if(ov)ov.style.setProperty("display","flex","important");}'
+			+ '  });'
+			+ '}'
+
+			+ 'var pws=false;'
+			+ 'setInterval(function(){'
+			+ '  if(!inPOS())return;'
+			+ '  if(hasPP()){hideOverlay();pws=true;}'
+			+ '  else if(pws){pws=false;chkCaisse();}'
+			+ '},300);'
+
+			+ 'chkCaisse();setInterval(chkCaisse,60000);'
+			+ 'console.log("wcpos 2.4 OK");'
 			+ '})();';
+
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
 			log.error('Main inject: ' + err.message);
 		});
 	}
 
-	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); runAntiPro(); runMain(); });
-	mainWindow.webContents.on('did-finish-load', () => { mainWindow?.setTitle(APP_VERSION); runAntiPro(); runMain(); });
+	mainWindow.webContents.on('dom-ready', () => {
+		mainWindow?.setTitle(APP_VERSION);
+		runAntiPro();
+		runMain();
+	});
+	mainWindow.webContents.on('did-finish-load', () => {
+		mainWindow?.setTitle(APP_VERSION);
+		runAntiPro();
+		runMain();
+	});
 	mainWindow.webContents.on('did-navigate', () => { runAntiPro(); runMain(); });
 	mainWindow.webContents.on('did-navigate-in-page', () => { runAntiPro(); runMain(); });
 
