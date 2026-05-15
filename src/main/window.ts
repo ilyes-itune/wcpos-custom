@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION   = 'WCPOS Custom 1.5';
+const APP_VERSION   = 'WCPOS Custom 1.6';
 const WP_AJAX_URL   = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
 const WP_SITE_URL   = 'https://usmm-tir.fr';
 
@@ -74,7 +74,7 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	mainWindow.webContents.on('did-finish-load', () => {
+	mainWindow.webContents.on('dom-ready', () => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.setTitle(APP_VERSION);
 
