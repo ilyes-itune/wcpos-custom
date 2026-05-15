@@ -13,7 +13,6 @@ if (isDevelopment) {
 	const expoPort = process.env.EXPO_PORT || '8088';
 	loadURL = (window: BrowserWindow) => window.loadURL(`http://localhost:${expoPort}`);
 } else {
-	// In production mode, serve the 'dist' directory from resources
 	const pathToDist = path.join(process.resourcesPath, 'dist');
 	loadURL = serve({
 		directory: pathToDist,
@@ -23,55 +22,17 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-/* ============================================================
- * CSS anti-pubs — masque les éléments Pro identifiés par inspection
- * data-testid confirmés sur WCPOS 1.8.x
- * ============================================================ */
+/* CSS anti-pubs sérialisé pour injection via createElement */
 const ANTI_PRO_CSS = `
   [data-testid="upgrade-notice-banner"],
   [data-testid="upgrade-title"],
   [data-testid="upgrade-to-pro-button"],
   [data-testid="view-demo-button"],
   [data-testid="add-fee"],
-  [data-testid="add-shipping"] {
-    display: none !important;
-  }
-`;
-
-/* ============================================================
- * JS anti-pubs — MutationObserver pour les re-renders React
- * SES (Lockdown) note : style.setProperty() fonctionne
- * ============================================================ */
-const ANTI_PRO_JS = `
-(function() {
-  var HIDE = [
-    'upgrade-notice-banner',
-    'upgrade-title',
-    'upgrade-to-pro-button',
-    'view-demo-button',
-    'add-fee',
-    'add-shipping'
-  ];
-
-  function hideProElements() {
-    HIDE.forEach(function(testid) {
-      document.querySelectorAll('[data-testid="' + testid + '"]').forEach(function(el) {
-        el.style.setProperty('display', 'none', 'important');
-      });
-    });
-  }
-
-  hideProElements();
-
-  if (window.MutationObserver) {
-    new MutationObserver(hideProElements)
-      .observe(document.body, { childList: true, subtree: true });
-  }
-})();
+  [data-testid="add-shipping"] { display:none!important; }
 `;
 
 export const createWindow = (): void => {
-	// Create the browser window.
 	mainWindow = new BrowserWindow({
 		show: false,
 		width: 1024,
@@ -79,7 +40,7 @@ export const createWindow = (): void => {
 		icon: path.join(__dirname, '../../icons/icon.ico'),
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-			sandbox: false, // Required for preload script to work
+			sandbox: false,
 			nodeIntegration: false,
 			contextIsolation: true,
 		},
@@ -90,30 +51,52 @@ export const createWindow = (): void => {
 		mainWindow.webContents.openDevTools();
 	}
 
-	// Load the application
 	loadURL(mainWindow);
 
-	// ── Injection CSS/JS anti-pubs après chaque chargement de page ──────────
+	/* Injection via createElement — fonctionne sur le schéma wcpos:// */
 	mainWindow.webContents.on('did-finish-load', () => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
-		// Injecte le CSS
-		mainWindow.webContents.insertCSS(ANTI_PRO_CSS).catch((err) => {
-			log.error('insertCSS failed:', err);
+		const css = ANTI_PRO_CSS.replace(/`/g, '\\`');
+
+		const js = `
+(function() {
+  /* Injecte le CSS dans <head> */
+  if (!document.getElementById('wcpos-anti-pro')) {
+    var style = document.createElement('style');
+    style.id = 'wcpos-anti-pro';
+    style.textContent = \`${css}\`;
+    document.head.appendChild(style);
+  }
+
+  /* MutationObserver avec setProperty (compatible SES) */
+  var HIDE = [
+    'upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
+    'view-demo-button','add-fee','add-shipping'
+  ];
+  function hide() {
+    HIDE.forEach(function(t) {
+      document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el) {
+        el.style.setProperty('display','none','important');
+      });
+    });
+  }
+  hide();
+  if (window.MutationObserver) {
+    new MutationObserver(hide).observe(document.body, {childList:true, subtree:true});
+  }
+})();
+`;
+
+		mainWindow.webContents.executeJavaScript(js).catch((err) => {
+			log.error('Anti-pro JS failed:', err);
 		});
 
-		// Injecte le JS
-		mainWindow.webContents.executeJavaScript(ANTI_PRO_JS).catch((err) => {
-			log.error('executeJavaScript failed:', err);
-		});
-
-		log.info('Anti-pro CSS/JS injected');
+		log.info('Anti-pro injected');
 	});
 
 	mainWindow.on('ready-to-show', () => {
-		if (!mainWindow) {
-			throw new Error('"mainWindow" is not defined');
-		}
+		if (!mainWindow) throw new Error('"mainWindow" is not defined');
 		if (process.env.START_MINIMIZED) {
 			mainWindow.minimize();
 		} else {
@@ -121,18 +104,14 @@ export const createWindow = (): void => {
 		}
 	});
 
-	mainWindow.on('closed', () => {
-		mainWindow = null;
-	});
+	mainWindow.on('closed', () => { mainWindow = null; });
 
-	// Open external URLs in the user's default browser
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 		log.info(`Opening in external browser: ${url}`);
 		shell.openExternal(url);
 		return { action: 'deny' };
 	});
 
-	// Handle failed loads
 	let retryCount = 0;
 	const MAX_RETRIES = 30;
 
@@ -140,22 +119,15 @@ export const createWindow = (): void => {
 		log.error(`did fail load with code ${errorCode}: ${errorDescription}`);
 		if (errorDescription === 'ERR_CONNECTION_REFUSED') {
 			if (retryCount >= MAX_RETRIES) {
-				log.error('Max retries reached, giving up on dev server connection');
+				log.error('Max retries reached');
 				return;
 			}
 			retryCount++;
-			log.info('Dev server not ready, retrying in 2s...');
 			setTimeout(() => {
-				if (mainWindow && !mainWindow.isDestroyed()) {
-					loadURL(mainWindow);
-				}
+				if (mainWindow && !mainWindow.isDestroyed()) loadURL(mainWindow);
 			}, 2000);
-		} else {
-			log.error(`Load failed without retry: ${errorDescription}`);
 		}
 	});
 };
 
-export const getMainWindow = (): BrowserWindow | null => {
-	return mainWindow;
-};
+export const getMainWindow = (): BrowserWindow | null => mainWindow;
