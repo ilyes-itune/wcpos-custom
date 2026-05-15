@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION = 'WCPOS Custom 1.7';
+const APP_VERSION = 'WCPOS Custom 1.8';
 const WP_AJAX_URL = 'https://usmm-tir.fr/wp-admin/admin-ajax.php';
 const WP_SITE_URL = 'https://usmm-tir.fr';
 
@@ -273,7 +273,7 @@ const INJECT_JS = `
   checkCaisse();
   setInterval(checkCaisse,60000);
 
-  log('wcpos main injected OK');
+  console.log('wcpos main injected OK');
 
 })();
 `;
