@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import { BrowserWindow, shell, session } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import serve from 'electron-serve';
 
 import { logger as log } from './log';
@@ -37,6 +37,7 @@ export const createWindow = (): void => {
 			sandbox: false,
 			nodeIntegration: false,
 			contextIsolation: true,
+			additionalArguments: ['--anti-pro'],
 		},
 		backgroundColor: '#fff',
 	});
@@ -73,13 +74,87 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	mainWindow.webContents.on('dom-ready', () => {
+	/* ── Injection via did-navigate (se déclenche à chaque navigation) ── */
+	mainWindow.webContents.on('did-navigate', () => injectAntiPro());
+	mainWindow.webContents.on('did-navigate-in-page', () => injectAntiPro());
+
+	/* ── Fallback : polling toutes les 2s tant que la page charge ── */
+	let pollCount = 0;
+	const pollTimer = setInterval(() => {
+		if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(pollTimer); return; }
+		injectAntiPro();
+		if (++pollCount > 30) clearInterval(pollTimer); /* arrête après 60s */
+	}, 2000);
+
+	function injectAntiPro() {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		mainWindow.setTitle(APP_VERSION);
+
+		const js = `
+(function () {
+  var HIDE_TESTIDS = [
+    'upgrade-notice-banner',
+    'upgrade-title',
+    'upgrade-to-pro-button',
+    'view-demo-button',
+    'add-fee',
+    'add-shipping'
+  ];
+
+  function injectCSS() {
+    if (document.getElementById('wcpos-anti-pro')) return;
+    var s = document.createElement('style');
+    s.id = 'wcpos-anti-pro';
+    s.textContent = HIDE_TESTIDS.map(function(t) {
+      return '[data-testid="' + t + '"]';
+    }).join(',') + '{display:none!important;visibility:hidden!important}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function hide() {
+    injectCSS();
+    HIDE_TESTIDS.forEach(function(t) {
+      document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
+        el.style.setProperty('display', 'none', 'important');
+      });
+    });
+  }
+
+  hide();
+
+  /* Active le polling + MutationObserver une seule fois */
+  if (!window.__wcposAntiProActive) {
+    window.__wcposAntiProActive = true;
+    [100, 300, 700, 1500, 3000].forEach(function(ms) { setTimeout(hide, ms); });
+    setInterval(hide, 500);
+    if (window.MutationObserver) {
+      new MutationObserver(hide).observe(document.body || document.documentElement, {
+        childList: true, subtree: true
+      });
+    }
+  }
+})();
+`;
+
+		mainWindow.webContents.executeJavaScript(js).catch((err) => {
+			log.error('Anti-pro inject failed:', err);
+		});
+	}
+
+	/* ── Injection principale (caisse, panneaux, overlay) ── */
+	mainWindow.webContents.on('dom-ready', () => injectMain());
+	/* Fallback si dom-ready ne se déclenche pas */
+	setTimeout(() => injectMain(), 5000);
+	setTimeout(() => injectMain(), 10000);
+
+	function injectMain() {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
 
 		const js = `
 (function () {
   'use strict';
+
+  if (window.__wcposMainInjected) return;
+  window.__wcposMainInjected = true;
 
   var AJAX_URL = ${JSON.stringify(WP_AJAX_URL)};
   var SITE_URL = ${JSON.stringify(WP_SITE_URL)};
@@ -91,30 +166,6 @@ export const createWindow = (): void => {
     reports:   'Débloquez les rapports'
   };
 
-  /* ── Testids à masquer ───────────────────────────────── */
-  var HIDE_TESTIDS = [
-    'upgrade-notice-banner',
-    'upgrade-title',
-    'upgrade-to-pro-button',
-    'view-demo-button',
-    'add-fee',
-    'add-shipping'
-  ];
-
-  /* ── Textes Pro à masquer (éléments sans testid) ─────── */
-  var HIDE_TEXTS = [
-    'Passez à Pro',
-    'Passer à Pro',
-    'Passez à la version Pro',
-    'Upgrade to Pro',
-    'Profitez de plus avec Pro',
-    'Soutenez les mises à jour futures',
-    'Débloquez les rapports',
-    'Ajoutez de nouveaux clients et modifiez',
-    'Rouvrez et imprimez les reçus',
-    'Ajustez les prix et quantités'
-  ];
-
   /* ── Ajax helper ─────────────────────────────────────── */
   function ajax(action, data) {
     var fd = new FormData();
@@ -125,68 +176,18 @@ export const createWindow = (): void => {
       .then(function(r){ return r.data || r; });
   }
 
-  /* ── Anti-pubs ───────────────────────────────────────── */
-  function hide() {
-    /* Par testid */
-    HIDE_TESTIDS.forEach(function(t) {
-      document.querySelectorAll('[data-testid="' + t + '"]').forEach(function(el) {
-        el.style.setProperty('display', 'none', 'important');
-      });
-    });
-
-    /* Par texte — masque le conteneur parent le plus proche */
-    HIDE_TEXTS.forEach(function(txt) {
-      document.querySelectorAll('*').forEach(function(el) {
-        if (el.children.length > 0) return; /* feuilles seulement */
-        var content = (el.textContent || '').trim();
-        if (content.indexOf(txt) === 0 || content === txt) {
-          /* Remonte jusqu'à un conteneur significatif */
-          var target = el;
-          for (var i = 0; i < 6; i++) {
-            var p = target.parentElement;
-            if (!p) break;
-            var r = p.getBoundingClientRect();
-            /* Arrête si le parent est trop grand (toute la page) */
-            if (r.width > window.innerWidth * 0.9) break;
-            target = p;
-          }
-          target.style.setProperty('display', 'none', 'important');
-        }
-      });
-    });
-
-    /* CSS statique (une seule fois) */
-    if (!document.getElementById('wcpos-anti-pro')) {
-      var s = document.createElement('style');
-      s.id = 'wcpos-anti-pro';
-      s.textContent = HIDE_TESTIDS.map(function(t){
-        return '[data-testid="' + t + '"]';
-      }).join(',') + '{display:none!important}';
-      (document.head || document.documentElement).appendChild(s);
-    }
-  }
-
-  hide();
-  [300, 800, 1500, 3000].forEach(function(ms){ setTimeout(hide, ms); });
-  setInterval(hide, 500);
-
   /* ── Injection panneaux custom ───────────────────────── */
   function findProPanel() {
-    /* Cherche par plusieurs classes car elles peuvent changer entre versions */
     var candidates = [];
     ['r-13awgt0', 'r-1p0dtai', 'r-6koalj', 'r-14lw9ot'].forEach(function(cls) {
-      document.querySelectorAll('.' + cls).forEach(function(el) {
-        candidates.push(el);
-      });
+      document.querySelectorAll('.' + cls).forEach(function(el) { candidates.push(el); });
     });
-    /* Déduplique */
     candidates = candidates.filter(function(el, i, arr) { return arr.indexOf(el) === i; });
 
     var best = null, bestH = Infinity;
     candidates.forEach(function(el) {
       var r = el.getBoundingClientRect();
-      if (r.width < 400 || r.height < 100) return;
-      if (r.x > 200) return;
+      if (r.width < 400 || r.height < 100 || r.x > 200) return;
       if (r.width < window.innerWidth * 0.4) return;
       var text = el.textContent || '';
       for (var pid in PANEL_TEXTS) {
@@ -196,9 +197,9 @@ export const createWindow = (): void => {
       }
     });
 
-    /* Fallback : cherche par texte directement */
     if (!best) {
       for (var pid in PANEL_TEXTS) {
+        if (best) break;
         document.querySelectorAll('*').forEach(function(el) {
           if (best) return;
           var r = el.getBoundingClientRect();
@@ -209,7 +210,6 @@ export const createWindow = (): void => {
         });
       }
     }
-
     return best;
   }
 
@@ -234,10 +234,7 @@ export const createWindow = (): void => {
           if (!url) return;
           url += (url.indexOf('?')!==-1?'&':'?') + 'context=overlay';
           fetch(url, { method:'POST', body:new FormData(form), credentials:'include' })
-          .then(function(){
-            loadPanel(panelId, wrapper);
-            setTimeout(checkCaisse, 400);
-          });
+          .then(function(){ loadPanel(panelId, wrapper); setTimeout(checkCaisse, 400); });
         });
       });
       wrapper.querySelectorAll('[data-caisse-nav]:not([data-bound])').forEach(function(btn) {
@@ -274,14 +271,14 @@ export const createWindow = (): void => {
     el.innerHTML = '';
     el.style.cssText = 'display:flex;flex-direction:column;flex:1;padding:0;overflow:hidden;';
     var wrapper = document.createElement('div');
-    wrapper.id  = 'wcpos-panel-content';
+    wrapper.id = 'wcpos-panel-content';
     wrapper.setAttribute('data-panel', pid);
     el.appendChild(wrapper);
     loadPanel(pid, wrapper);
     setTimeout(function(){ injecting = false; }, 500);
   }
 
-  /* ── Navigation caisse via window._wcpos_action ──────── */
+  /* ── Navigation caisse ───────────────────────────────── */
   window._wcpos_action = null;
 
   function reloadCaissePanel(view) {
@@ -334,7 +331,6 @@ export const createWindow = (): void => {
   }).observe(document.body, { childList:true, subtree:true });
 
   /* ── Overlay caisse fermée ───────────────────────────── */
-  var CAISSE_OUVERTE  = false;
   var PANEL_WAS_SHOWN = false;
 
   function isCustomPanelVisible() { return !!document.getElementById('wcpos-panel-content'); }
@@ -342,7 +338,7 @@ export const createWindow = (): void => {
   function showCaisseOverlay(message) {
     if (document.getElementById('wcpos-caisse-overlay')) return;
     var ov = document.createElement('div');
-    ov.id  = 'wcpos-caisse-overlay';
+    ov.id = 'wcpos-caisse-overlay';
     ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;color:#fff';
     ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">\uD83D\uDD12</div>'
       + '<h2 style="font-size:1.2em;font-weight:700;margin:0 0 10px">Caisse ferm\u00e9e</h2>'
@@ -365,8 +361,8 @@ export const createWindow = (): void => {
 
   function checkCaisse() {
     ajax('wcpos_caisse_status').then(function(data) {
-      CAISSE_OUVERTE = !!(data && data.open);
-      if (CAISSE_OUVERTE) { hideCaisseOverlay(); }
+      var open = !!(data && data.open);
+      if (open) { hideCaisseOverlay(); }
       else {
         showCaisseOverlay(data ? data.message : '');
         if (!isCustomPanelVisible()) {
@@ -379,17 +375,12 @@ export const createWindow = (): void => {
 
   setInterval(function() {
     var panelVisible = isCustomPanelVisible();
-    if (panelVisible) {
-      hideCaisseOverlay(); PANEL_WAS_SHOWN = true;
-    } else if (PANEL_WAS_SHOWN) {
-      PANEL_WAS_SHOWN = false; checkCaisse();
-    }
+    if (panelVisible) { hideCaisseOverlay(); PANEL_WAS_SHOWN = true; }
+    else if (PANEL_WAS_SHOWN) { PANEL_WAS_SHOWN = false; checkCaisse(); }
   }, 300);
 
-  /* ── MutationObserver principal ──────────────────────── */
   var caisseChecked = false;
   new MutationObserver(function() {
-    hide();
     injectPanel();
     if (!caisseChecked && document.getElementById('titlebar')) {
       caisseChecked = true; checkCaisse();
@@ -402,11 +393,11 @@ export const createWindow = (): void => {
 `;
 
 		mainWindow.webContents.executeJavaScript(js).catch((err) => {
-			log.error('Injection JS failed:', err);
+			log.error('Injection principale failed:', err);
 		});
 
 		log.info('Injection complète — ' + APP_VERSION);
-	});
+	}
 
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
