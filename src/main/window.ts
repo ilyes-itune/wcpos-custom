@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.6';
+const APP_VERSION  = 'WCPOS Custom 2.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -106,8 +106,13 @@ export const createWindow = (): void => {
 			+ 'var H=["upgrade-notice-banner","upgrade-title","upgrade-to-pro-button","view-demo-button","add-fee","add-shipping"];'
 			+ 'function css(){if(document.getElementById("wcpos-ap"))return;'
 			+ 'var s=document.createElement("style");s.id="wcpos-ap";'
-			+ 's.textContent=H.map(function(t){return\'[data-testid="\'+t+\'"]\';}).join(",")+"{ display:none!important }";'
-			+ '(document.head||document.documentElement).appendChild(s);}'
+			+ 's.textContent=H.map(function(t){return\'[data-testid="\'+t+\'"]\';}).join(",")+",[aria-label=\"Notifications\"],[aria-label=\"Open notification center\"]{display:none!important}";'
+			+ '(document.head||document.documentElement).appendChild(s);'
+			+ 'if(!document.getElementById("wcpos-bell")){'
+			+ 'var sb=document.createElement("style");sb.id="wcpos-bell";'
+			+ 'sb.textContent="[aria-label=\'Notifications\'],[aria-label=\'Open notification center\']{display:none!important}";'
+			+ '(document.head||document.documentElement).appendChild(sb);}'
+			+ '}'
 			+ 'function hide(){css();H.forEach(function(t){'
 			+ 'document.querySelectorAll(\'[data-testid="\'+t+\'"]\').forEach(function(el){'
 			+ 'el.style.setProperty("display","none","important");});});}'
@@ -179,21 +184,25 @@ export const createWindow = (): void => {
 
 			/* findPanel */
 			+ 'function findPanel(){'
-			+ 'var best=null,bestScore=0;'
+			/* Cherche le PLUS PETIT container avec le texte Pro
+			   r.x >= 40 exclut les wrappers qui incluent la sidebar (x=0) */
+			+ 'var best=null,bestScore=Infinity;'
 			+ 'document.querySelectorAll("div,section,aside").forEach(function(el){'
 			+ 'var r=el.getBoundingClientRect();'
-			+ 'if(r.width<300||r.height<80||r.x>300)return;'
-			+ 'if(r.width<window.innerWidth*0.3)return;'
+			+ 'if(r.width<200||r.height<80)return;'
+			+ 'if(r.x<40)return;'
+			+ 'if(r.x>450)return;'
+			+ 'if(r.width<window.innerWidth*0.25)return;'
 			+ 'if(el.querySelector("#wpp"))return;'
 			+ 'var txt=el.textContent||"";'
 			+ 'for(var pid in PT){'
 			+ 'if(txt.indexOf(PT[pid])!==-1){'
 			+ 'var score=r.width*r.height;'
-			+ 'if(score>bestScore){bestScore=score;best={el:el,pid:pid};}'
+			/* Prend le PLUS PETIT container (évite d'englober la sidebar) */
+			+ 'if(score<bestScore){bestScore=score;best={el:el,pid:pid};}'
 			+ '}}'
 			+ '});return best;'
 			+ '}'
-
 			/* injectPanel — respecte loadingPanel pour éviter les boucles */
 			+ 'var injecting=false,cPid=null,cWrap=null;'
 			+ 'function injectPanel(){'
