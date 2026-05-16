@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.1';
+const APP_VERSION  = 'WCPOS Custom 3.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -310,7 +310,7 @@ export const createWindow = (): void => {
     ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
       +'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermee</h2>'
       +'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-        +(msg||'La caisse est fermee. Ouvrez-la depuis l\'onglet Clients.')+'</p>'
+        +(msg||'La caisse est fermee.')+'</p>'
       +'<button id="wcb" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;'
         +'border-radius:6px;font-size:.95em;cursor:pointer">OK, compris</button>';
     document.body.appendChild(ov);
