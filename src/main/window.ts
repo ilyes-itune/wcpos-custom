@@ -1,8 +1,6 @@
 import * as path from 'path';
-
 import { BrowserWindow, shell } from 'electron';
 import serve from 'electron-serve';
-
 import { logger as log } from './log';
 import { isDevelopment } from './util';
 
@@ -21,7 +19,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.2';
+const APP_VERSION  = 'WCPOS Custom 3.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -65,23 +63,23 @@ export const createWindow = (): void => {
 		}
 	);
 
-	/* CORS — supprime les headers existants puis injecte un seul propre */
+	/* CORS — Nettoyage et injection des headers de l'application */
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(details, callback) => {
 			const headers: Record<string, string[]> = {};
 			for (const [key, value] of Object.entries(details.responseHeaders ?? {})) {
 				if (!['access-control-allow-origin',
-				      'access-control-allow-credentials',
-				      'access-control-allow-methods',
-				      'access-control-allow-headers'].includes(key.toLowerCase())) {
+					  'access-control-allow-credentials',
+					  'access-control-allow-methods',
+					  'access-control-allow-headers'].includes(key.toLowerCase())) {
 					headers[key] = value as string[];
 				}
 			}
 			headers['Access-Control-Allow-Origin']      = ['wcpos://-'];
 			headers['Access-Control-Allow-Credentials'] = ['true'];
 			headers['Access-Control-Allow-Methods']     = ['GET, POST, OPTIONS'];
-			headers['Access-Control-Allow-Headers']     = ['Content-Type'];
+			headers['Access-Control-Allow-Headers']     = ['Content-Type, Authorization']; // Ajout d'Authorization au cas où
 			callback({ responseHeaders: headers });
 		}
 	);
@@ -94,13 +92,11 @@ export const createWindow = (): void => {
 	});
 
 	/* ═══════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub
-	   Masque : bandeaux Pro, add-fee, add-shipping, cloche Notifications
+	   BLOC 1 — Anti-pub (Optimisé)
 	   ═══════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
-		// Testids à masquer
 		const HIDE = [
 			'upgrade-notice-banner',
 			'upgrade-title',
@@ -110,45 +106,41 @@ export const createWindow = (): void => {
 			'add-shipping',
 		];
 
-		// CSS statique — utilise des guillemets simples pour les attributs CSS
-		// afin d'éviter tout problème d'échappement dans la chaîne JS
 		const hideCss = HIDE.map(t => `[data-testid='${t}']`).join(',')
 			+ `,[aria-label='Notifications'],[aria-label='Open notification center']`
 			+ `{display:none!important}`;
 
-		// JS injecté dans le renderer
 		const hideList = JSON.stringify(HIDE);
 		const js = `(function(){
-  var H=${hideList};
-  function injectCSS(){
-    if(document.getElementById('wcpos-ap'))return;
-    var s=document.createElement('style');
-    s.id='wcpos-ap';
-    s.textContent=${JSON.stringify(hideCss)};
-    (document.head||document.documentElement).appendChild(s);
-  }
-  function hide(){
-    injectCSS();
-    H.forEach(function(t){
-      document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el){
-        el.style.setProperty('display','none','important');
-      });
-    });
-    /* Masque aussi la cloche par aria-label */
-    ['Notifications','Open notification center'].forEach(function(label){
-      document.querySelectorAll('[aria-label="'+label+'"]').forEach(function(el){
-        el.style.setProperty('display','none','important');
-      });
-    });
-  }
-  hide();
-  if(!window.__ap){
-    window.__ap=true;
-    [100,300,700,1500,3000].forEach(function(ms){setTimeout(hide,ms);});
-    setInterval(hide,500);
-    new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});
-  }
-})();`;
+			var H=${hideList};
+			function injectCSS(){
+				if(document.getElementById('wcpos-ap')) return;
+				var s=document.createElement('style');
+				s.id='wcpos-ap';
+				s.textContent=${JSON.stringify(hideCss)};
+				(document.head||document.documentElement).appendChild(s);
+			}
+			function hide(){
+				injectCSS();
+				H.forEach(function(t){
+					document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el){
+						el.style.setProperty('display','none','important');
+					});
+				});
+				['Notifications','Open notification center'].forEach(function(label){
+					document.querySelectorAll('[aria-label="'+label+'"]').forEach(function(el){
+						el.style.setProperty('display','none','important');
+					});
+				});
+			}
+			hide();
+			if(!window.__ap){
+				window.__ap=true;
+				[100,300,700,1500,3000].forEach(function(ms){setTimeout(hide,ms);});
+				setInterval(hide,500);
+				new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});
+			}
+		})();`;
 
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
 			log.error('Anti-pro: ' + err.message);
@@ -156,213 +148,199 @@ export const createWindow = (): void => {
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Panneaux custom + caisse
+	   BLOC 2 — Panneaux custom + caisse (Sécurisé)
 	   ═══════════════════════════════════════════════════════════════════════ */
 	function runMain(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
 		const js = `(function(){
-  /* Guard : POS actif = search-products présent */
-  var inPos=!!document.querySelector('[data-testid="search-products"]');
-  if(!inPos){if(window.__mi){window.__mi=false;}return;}
-  if(window.__mi)return;
-  window.__mi=true;
+			var inPos=!!document.querySelector('[data-testid="search-products"]');
+			if(!inPos){if(window.__mi){window.__mi=false;}return;}
+			if(window.__mi)return;
+			window.__mi=true;
 
-  var REST=${JSON.stringify(WP_REST_BASE)};
+			var REST=${JSON.stringify(WP_REST_BASE)};
 
-  /* Textes Pro des panneaux à remplacer */
-  /* Sous-chaînes sans accents pour indexOf fiable dans tous les navigateurs */
-  var PT={
-    products:'Ajustez les prix',
-    orders:'imprimez les',
-    customers:'Ajoutez de nouveaux clients',
-    reports:'bloquez les rapports'
-  };
+			// Correction de la casse pour la recherche
+			var PT={
+				products:'ajustez les prix',
+				orders:'imprimez les',
+				customers:'ajoutez de nouveaux clients',
+				reports:'bloquez les rapports'
+			};
 
-  /* REST helper */
-  function rp(ep,data,cb){
-    fetch(REST+ep,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(data),
-      credentials:'include'
-    }).then(function(r){return r.json();})
-      .then(cb)
-      .catch(function(e){cb({error:e.message});});
-  }
+			function rp(ep,data,cb){
+				fetch(REST+ep,{
+					method:'POST',
+					headers:{'Content-Type':'application/json'},
+					body:JSON.stringify(data),
+					credentials:'include'
+				}).then(function(r){return r.json();})
+				  .then(cb)
+				  .catch(function(e){cb({error:e.message});});
+			}
 
-  /* loadPanel — flag loadingPanel uniquement pour le MutationObserver.
-     force=true : action utilisateur volontaire, bypass du flag. */
-  var loadingPanel=false;
-  function loadPanel(pid,wrap,cv,force){
-    if(loadingPanel&&!force)return;
-    loadingPanel=true;
-    wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement...</p>';
-    var body={panel_id:pid};
-    if(cv)body.caisse_view=cv;
-    rp('/panel',body,function(d){
-      loadingPanel=false;
-      if(!d||!d.html){
-        wrap.innerHTML='<p style="padding:20px;color:#c00;font-family:sans-serif">'+(d&&d.error?d.error:'Erreur')+'</p>';
-        return;
-      }
-      wrap.innerHTML=d.html;
-      wrap.querySelectorAll('script').forEach(function(s){
-        var ns=document.createElement('script');
-        ns.textContent=s.textContent;
-        s.parentNode.replaceChild(ns,s);
-      });
-    });
-  }
+			var loadingPanel=false;
+			function loadPanel(pid,wrap,cv,force){
+				if(loadingPanel&&!force)return;
+				loadingPanel=true;
+				wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement...</p>';
+				var body={panel_id:pid};
+				if(cv)body.caisse_view=cv;
+				rp('/panel',body,function(d){
+					loadingPanel=false;
+					if(!d||!d.html){
+						wrap.innerHTML='<p style="padding:20px;color:#c00;font-family:sans-serif">'+(d&&d.error?d.error:'Erreur')+'</p>';
+						return;
+					}
+					wrap.innerHTML=d.html;
+					wrap.querySelectorAll('script').forEach(function(s){
+						var ns=document.createElement('script');
+						ns.textContent=s.textContent;
+						s.parentNode.replaceChild(ns,s);
+					});
+				});
+			}
 
-  /* findPanel — cherche le PLUS PETIT container avec le texte Pro.
-     r.x >= 40 exclut les wrappers qui englobent la sidebar (x≈0). */
-  function findPanel(){
-    /* Cherche le PLUS GRAND container valide — 100% relatif à la fenêtre.
-       Règles (toutes en % pour fonctionner à toute résolution) :
-       - Exclut wrappers plein-écran : x=0 ET largeur > 85% de l'écran
-       - Exclut éléments trop à droite : x > 75% de l'écran
-       - Exclut éléments trop étroits : largeur < 20% de l'écran
-       - Exclut éléments trop bas : hauteur < 5% de l'écran
-       La carte Pro upsell (max-w-xl, centrée) passe toujours ces filtres. */
-    var W=window.innerWidth, H=window.innerHeight;
-    var best=null,bestScore=0;
-    document.querySelectorAll('div,section,aside').forEach(function(el){
-      var r=el.getBoundingClientRect();
-      if(r.width < W*0.15 || r.height < H*0.05) return;
-      if(r.x===0 && r.width > W*0.85) return;
-      if(r.x > W*0.75) return;
-      if(r.width < W*0.20) return;
-      if(el.querySelector('#wpp')) return;
-      var txt=el.textContent||'';
-      for(var pid in PT){
-        if(txt.indexOf(PT[pid])!==-1){
-          var score=r.width*r.height;
-          if(score>bestScore){bestScore=score;best={el:el,pid:pid};}
-        }
-      }
-    });
-    return best;
-  }
+			function findPanel(){
+				var W=window.innerWidth, H=window.innerHeight;
+				var best=null,bestScore=0;
+				document.querySelectorAll('div,section,aside').forEach(function(el){
+					var r=el.getBoundingClientRect();
+					if(r.width < W*0.15 || r.height < H*0.05) return;
+					if(r.x===0 && r.width > W*0.85) return;
+					if(r.x > W*0.75) return;
+					if(r.width < W*0.20) return;
+					if(el.querySelector('#wpp')) return;
+					
+					// Conversion en minuscules pour fiabiliser la détection
+					var txt=(el.textContent||'').toLowerCase();
+					for(var pid in PT){
+						if(txt.indexOf(PT[pid])!==-1){
+							var score=r.width*r.height;
+							if(score>bestScore){bestScore=score;best={el:el,pid:pid};}
+						}
+					}
+				});
+				return best;
+			}
 
-  /* injectPanel — respecte loadingPanel pour éviter les boucles MutationObserver */
-  var injecting=false,cPid=null,cWrap=null;
-  function injectPanel(){
-    if(injecting||loadingPanel)return;
-    if(!document.querySelector('[data-testid="search-products"]'))return;
-    var found=findPanel();
-    if(!found)return;
-    var el=found.el,pid=found.pid;
-    var ex=el.querySelector('#wpp');
-    if(ex&&ex.getAttribute('data-pid')===pid)return;
-    if(ex){ex.setAttribute('data-pid',pid);cPid=pid;cWrap=ex;loadPanel(pid,ex,null,true);return;}
-    injecting=true;
-    el.innerHTML='';
-    el.style.cssText='display:flex;flex-direction:column;flex:1;padding:0;overflow:auto;';
-    var w=document.createElement('div');
-    w.id='wpp';w.setAttribute('data-pid',pid);
-    el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w,null,true);
-    setTimeout(function(){injecting=false;},600);
-  }
+			var injecting=false,cPid=null,cWrap=null;
+			function injectPanel(){
+				if(injecting||loadingPanel)return;
+				if(!document.querySelector('[data-testid="search-products"]'))return;
+				var found=findPanel();
+				if(!found)return;
+				var el=found.el,pid=found.pid;
+				var ex=el.querySelector('#wpp');
+				if(ex&&ex.getAttribute('data-pid')===pid)return;
+				if(ex){ex.setAttribute('data-pid',pid);cPid=pid;cWrap=ex;loadPanel(pid,ex,null,true);return;}
+				injecting=true;
+				el.innerHTML='';
+				el.style.cssText='display:flex;flex-direction:column;flex:1;padding:0;overflow:auto;';
+				var w=document.createElement('div');
+				w.id='wpp';w.setAttribute('data-pid',pid);
+				el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w,null,true);
+				setTimeout(function(){injecting=false;},600);
+			}
 
-  /* window._wcpos_action — compatible avec le snippet WPCode caisse */
-  window._wcpos_action=null;
+			window._wcpos_action=null;
 
-  function submitCaisse(action,data){
-    var fd={};
-    if(data&&typeof data.forEach==='function'){
-      data.forEach(function(v,k){fd[k]=v;});
-    }else if(data&&typeof data==='object'){fd=data;}
-    var body=Object.assign({wcpos_caisse_action:action},fd);
-    rp('/caisse/submit',body,function(d){
-      hideOverlay();
-      if(cWrap&&cPid)loadPanel(cPid,cWrap,'dashboard',true);
-      setTimeout(chkCaisse,400);
-    });
-  }
+			// Correction de la boucle de soumission
+			function submitCaisse(action,data){
+				var fd={};
+				if(data && typeof data.entries === 'function'){
+					// Si c'est un FormData natif
+					for(var pair of data.entries()) { fd[pair[0]] = pair[1]; }
+				} else if(data && typeof data === 'object'){
+					// Si c'est un objet clé-valeur standard
+					fd = Object.assign({}, data);
+				}
+				var body=Object.assign({wcpos_caisse_action:action},fd);
+				rp('/caisse/submit',body,function(d){
+					hideOverlay();
+					if(cWrap&&cPid)loadPanel(cPid,cWrap,'dashboard',true);
+					setTimeout(chkCaisse,400);
+				});
+			}
 
-  /* Polling — actions nav utilisateur passent en force=true */
-  setInterval(function(){
-    if(!window._wcpos_action)return;
-    var a=window._wcpos_action;
-    window._wcpos_action=null;
-    if(a.type==='nav'&&cWrap&&cPid){
-      loadingPanel=false;
-      loadPanel(cPid,cWrap,a.view,true);
-    }
-    if(a.type==='submit')submitCaisse(a.action,a.data);
-  },100);
+			setInterval(function(){
+				if(!window._wcpos_action)return;
+				var a=window._wcpos_action;
+				window._wcpos_action=null;
+				if(a.type==='nav'&&cWrap&&cPid){
+					loadingPanel=false;
+					loadPanel(cPid,cWrap,a.view,true);
+				}
+				if(a.type==='submit')submitCaisse(a.action,a.data);
+			},100);
 
-  new MutationObserver(function(){injectPanel();})
-    .observe(document.body,{childList:true,subtree:true});
+			new MutationObserver(function(){injectPanel();})
+				.observe(document.body,{childList:true,subtree:true});
 
-  /* Overlay caisse fermée */
-  function hasPP(){return !!document.getElementById('wpp');}
-  function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
+			function hasPP(){return !!document.getElementById('wpp');}
+			function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
 
-  function showOverlay(msg){
-    if(document.getElementById('wco'))return;
-    var ov=document.createElement('div');
-    ov.id='wco';
-    ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
-      +'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-      +'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
-    ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
-      +'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermee</h2>'
-      +'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-        +(msg||'La caisse est fermee.')+'</p>'
-      +'<button id="wcb" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;'
-        +'border-radius:6px;font-size:.95em;cursor:pointer">OK, compris</button>';
-    document.body.appendChild(ov);
-    var btn=document.getElementById('wcb');
-    if(btn){btn.addEventListener('click',function(){ov.remove();});}
-  }
+			function showOverlay(msg){
+				if(document.getElementById('wco'))return;
+				var ov=document.createElement('div');
+				ov.id='wco';
+				ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
+					+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+					+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
+				ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
+					+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermee</h2>'
+					+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
+					+(msg||'La caisse est fermee.')+'</p>'
+					+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;'
+					+'border-radius:6px;font-size:.95em;cursor:pointer">OK, compris</button>';
+				document.body.appendChild(ov);
+				var btn=document.getElementById('wcb');
+				if(btn){btn.addEventListener('click',function(){ov.remove();});}
+			}
 
-  function hideOverlay(){
-    var ov=document.getElementById('wco');
-    if(ov)ov.style.setProperty('display','none','important');
-  }
+			function hideOverlay(){
+				var ov=document.getElementById('wco');
+				if(ov)ov.style.setProperty('display','none','important');
+			}
 
-  function chkCaisse(){
-    if(!inPOS())return;
-    rp('/caisse/status',{},function(d){
-      if(!d||d.error)return;
-      if(d.open){hideOverlay();}
-      else if(!hasPP()){
-        showOverlay(d.message);
-        var ov=document.getElementById('wco');
-        if(ov)ov.style.setProperty('display','flex','important');
-      }
-    });
-  }
+			function chkCaisse(){
+				if(!inPOS())return;
+				rp('/caisse/status',{},function(d){
+					if(!d||d.error)return;
+					if(d.open){hideOverlay();}
+					else if(!hasPP()){
+						showOverlay(d.message);
+						var ov=document.getElementById('wco');
+						if(ov)ov.style.setProperty('display','flex','important');
+					}
+				});
+			}
 
-  var pws=false;
-  setInterval(function(){
-    if(!inPOS())return;
-    if(hasPP()){hideOverlay();pws=true;}
-    else if(pws){pws=false;chkCaisse();}
-  },300);
+			var pws=false;
+			setInterval(function(){
+				if(!inPOS())return;
+				if(hasPP()){hideOverlay();pws=true;}
+				else if(pws){pws=false;chkCaisse();}
+			},300);
 
-  chkCaisse();
-  setInterval(chkCaisse,60000);
-  console.log('wcpos 2.8 OK');
-})();`;
+			chkCaisse();
+			setInterval(chkCaisse,60000);
+			console.log('wcpos 2.8 OK');
+		})();`;
 
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
 			log.error('Main inject: ' + err.message);
 		});
 	}
 
+	// Unification du chargement : dom-ready suffit largement et évite la double injection
 	mainWindow.webContents.on('dom-ready', () => {
 		mainWindow?.setTitle(APP_VERSION);
 		runAntiPro();
 		runMain();
 	});
-	mainWindow.webContents.on('did-finish-load', () => {
-		mainWindow?.setTitle(APP_VERSION);
-		runAntiPro();
-		runMain();
-	});
+	
 	mainWindow.webContents.on('did-navigate', () => { runAntiPro(); runMain(); });
 	mainWindow.webContents.on('did-navigate-in-page', () => { runAntiPro(); runMain(); });
 
