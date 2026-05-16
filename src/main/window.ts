@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.8';
+const APP_VERSION  = 'WCPOS Custom 2.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -171,11 +171,12 @@ export const createWindow = (): void => {
   var REST=${JSON.stringify(WP_REST_BASE)};
 
   /* Textes Pro des panneaux à remplacer */
+  /* Sous-chaînes sans accents pour indexOf fiable dans tous les navigateurs */
   var PT={
     products:'Ajustez les prix',
-    orders:'Rouvrez et imprimez',
+    orders:'imprimez les',
     customers:'Ajoutez de nouveaux clients',
-    reports:'Debloquez les rapports'
+    reports:'bloquez les rapports'
   };
 
   /* REST helper */
@@ -221,8 +222,9 @@ export const createWindow = (): void => {
     document.querySelectorAll('div,section,aside').forEach(function(el){
       var r=el.getBoundingClientRect();
       if(r.width<200||r.height<80)return;
-      if(r.x<40)return;
-      if(r.x>450)return;
+      /* Skip uniquement les wrappers plein-écran qui englobent la sidebar */
+      if(r.x===0 && r.width > window.innerWidth*0.85)return;
+      if(r.x>500)return;
       if(r.width<window.innerWidth*0.25)return;
       if(el.querySelector('#wpp'))return;
       var txt=el.textContent||'';
