@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.5';
+const APP_VERSION  = 'WCPOS Custom 2.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -70,6 +70,26 @@ export const createWindow = (): void => {
 			headers['Access-Control-Allow-Methods']     = ['GET, POST, OPTIONS'];
 			headers['Access-Control-Allow-Headers']     = ['Content-Type'];
 			callback({ responseHeaders: headers });
+		}
+	);
+
+
+	/* ── Bloque toutes les connexions externes non essentielles ──────────────
+	   Novu (notifications), updates.wcpos.com, wcpos.com, GitHub update checks
+	   Seuls usmm-tir.fr et wcpos:// (assets locaux) sont autorisés ────────── */
+	mainWindow.webContents.session.webRequest.onBeforeRequest(
+		{
+			urls: [
+				'*://*.novu.co/*',          // Notifications Novu
+				'*://novu.co/*',
+				'*://updates.wcpos.com/*',  // Serveur de mises à jour WCPOS
+				'*://wcpos.com/*',          // Site wcpos.com (extensions, analytics)
+				'*://*.wcpos.com/*',
+				'*://api.github.com/repos/wcpos/*', // GitHub releases WCPOS
+			],
+		},
+		(_details, callback) => {
+			callback({ cancel: true });
 		}
 	);
 
