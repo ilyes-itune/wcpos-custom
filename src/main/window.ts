@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.4';
+const APP_VERSION  = 'WCPOS Custom 2.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -159,14 +159,19 @@ export const createWindow = (): void => {
 
 			/* Charge le HTML du panneau — ré-exécute les scripts inline
 			   (dont wcpos_caisse_nav_js du snippet qui gère data-caisse-nav) */
+			+ 'var loadingPanel=false;'
 			+ 'function loadPanel(pid,wrap,cv){'
+			+ '  if(loadingPanel)return;'
+			+ '  loadingPanel=true;'
 			+ '  wrap.innerHTML="<p style=\'padding:20px;color:#646970;font-family:sans-serif\'>Chargement...</p>";'
 			+ '  var body={panel_id:pid};if(cv)body.caisse_view=cv;'
 			+ '  rp("/panel",body,function(d){'
+			+ '    loadingPanel=false;'
 			+ '    if(!d||!d.html){'
 			+ '      wrap.innerHTML="<p style=\'padding:20px;color:#c00;font-family:sans-serif\'>"+(d&&d.error?d.error:"Erreur")+"</p>";'
 			+ '      return;'
 			+ '    }'
+			+ '    loadingPanel=false;'
 			+ '    wrap.innerHTML=d.html;'
 			/* Ré-exécute les scripts (dont wcpos_caisse_nav_js du snippet) */
 			+ '    wrap.querySelectorAll("script").forEach(function(s){'
@@ -210,6 +215,7 @@ export const createWindow = (): void => {
 			+ '  }'
 			+ '  var body=Object.assign({wcpos_caisse_action:action},fd);'
 			+ '  rp("/caisse/submit",body,function(d){'
+			+ '    hideOverlay();'
 			+ '    if(cWrap&&cPid)loadPanel(cPid,cWrap,"dashboard");'
 			+ '    setTimeout(chkCaisse,400);'
 			+ '  });'
@@ -247,18 +253,9 @@ export const createWindow = (): void => {
 			+ '  var btn=document.getElementById("wcb");'
 			+ '  if(btn){btn.addEventListener("click",function(){'
 			+ '    ov.remove();'
-			/* Cherche le bouton "Clients" dans la navigation */
-			+ '    var navBtns=Array.from(document.querySelectorAll(\'nav button,aside button,[role="tablist"] button,[role="tab"]\'));'
-			+ '    var caisseBtn=navBtns.find(function(b){'
-			+ '      var t=(b.textContent||b.getAttribute("aria-label")||"").toLowerCase();'
-			+ '      return t.indexOf("client")!==-1||t.indexOf("caisse")!==-1;'
-			+ '    });'
-			+ '    if(caisseBtn){caisseBtn.click();return;}'
-			/* Fallback 3ème bouton sidebar gauche */
-			+ '    var sideBtns=Array.from(document.querySelectorAll(\'button[role="button"]\')).filter(function(b){'
-			+ '      var r=b.getBoundingClientRect();return r.left<10&&r.top>0&&r.width>0;'
-			+ '    });'
-			+ '    if(sideBtns[2])sideBtns[2].click();'
+			/* Bouton Clients = sideBtns[2] — confirmé fonctionnel */
+			+ '    var sb=Array.from(document.querySelectorAll(\'button[role="button"]\')).filter(function(b){var r=b.getBoundingClientRect();return r.left<10&&r.top>0&&r.width>0;});'
+			+ '    if(sb[2])sb[2].click();'
 			+ '  });}'
 			+ '}'
 
