@@ -45,23 +45,17 @@ export const createWindow = (): void => {
 		mainWindow.webContents.openDevTools();
 	}
 
-	/* ── Blocage des connexions externes non essentielles ────────────────────
-	   Novu (notifications), updates.wcpos.com, wcpos.com, GitHub update checks
-	   Seuls usmm-tir.fr et wcpos:// (assets locaux) sont autorisés ────────── */
+	/* ── Blocage connexions externes ─────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
-		{
-			urls: [
-				'*://*.novu.co/*',
-				'*://novu.co/*',
-				'*://updates.wcpos.com/*',
-				'*://wcpos.com/*',
-				'*://*.wcpos.com/*',
-				'*://api.github.com/repos/wcpos/*',
-			],
-		},
-		(_details, callback) => {
-			callback({ cancel: true });
-		}
+		{ urls: [
+			'*://*.novu.co/*',
+			'*://novu.co/*',
+			'*://updates.wcpos.com/*',
+			'*://wcpos.com/*',
+			'*://*.wcpos.com/*',
+			'*://api.github.com/repos/wcpos/*',
+		]},
+		(_details, callback) => { callback({ cancel: true }); }
 	);
 
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
@@ -71,7 +65,7 @@ export const createWindow = (): void => {
 		}
 	);
 
-	/* CORS — supprime les headers existants avant d'injecter un seul propre */
+	/* CORS — supprime les headers existants puis injecte un seul propre */
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(details, callback) => {
@@ -99,209 +93,251 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 	});
 
-	/* ── Anti-pub ────────────────────────────────────────────────────────── */
+	/* ═══════════════════════════════════════════════════════════════════════
+	   BLOC 1 — Anti-pub
+	   Masque : bandeaux Pro, add-fee, add-shipping, cloche Notifications
+	   ═══════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		const js = '(function(){'
-			+ 'var H=["upgrade-notice-banner","upgrade-title","upgrade-to-pro-button","view-demo-button","add-fee","add-shipping"];'
-			+ 'function css(){if(document.getElementById("wcpos-ap"))return;'
-			+ 'var s=document.createElement("style");s.id="wcpos-ap";'
-			+ 's.textContent=H.map(function(t){return\'[data-testid="\'+t+\'"]\';}).join(",")+",[aria-label=\"Notifications\"],[aria-label=\"Open notification center\"]{display:none!important}";'
-			+ '(document.head||document.documentElement).appendChild(s);'
-			+ 'if(!document.getElementById("wcpos-bell")){'
-			+ 'var sb=document.createElement("style");sb.id="wcpos-bell";'
-			+ 'sb.textContent="[aria-label=\'Notifications\'],[aria-label=\'Open notification center\']{display:none!important}";'
-			+ '(document.head||document.documentElement).appendChild(sb);}'
-			+ '}'
-			+ 'function hide(){css();H.forEach(function(t){'
-			+ 'document.querySelectorAll(\'[data-testid="\'+t+\'"]\').forEach(function(el){'
-			+ 'el.style.setProperty("display","none","important");});});}'
-			+ 'hide();'
-			+ 'if(!window.__ap){'
-			+ 'window.__ap=true;'
-			+ '[100,300,700,1500,3000].forEach(function(ms){setTimeout(hide,ms);});'
-			+ 'setInterval(hide,500);'
-			+ 'new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});'
-			+ '}})();';
+
+		// Testids à masquer
+		const HIDE = [
+			'upgrade-notice-banner',
+			'upgrade-title',
+			'upgrade-to-pro-button',
+			'view-demo-button',
+			'add-fee',
+			'add-shipping',
+		];
+
+		// CSS statique — utilise des guillemets simples pour les attributs CSS
+		// afin d'éviter tout problème d'échappement dans la chaîne JS
+		const hideCss = HIDE.map(t => `[data-testid='${t}']`).join(',')
+			+ `,[aria-label='Notifications'],[aria-label='Open notification center']`
+			+ `{display:none!important}`;
+
+		// JS injecté dans le renderer
+		const hideList = JSON.stringify(HIDE);
+		const js = `(function(){
+  var H=${hideList};
+  function injectCSS(){
+    if(document.getElementById('wcpos-ap'))return;
+    var s=document.createElement('style');
+    s.id='wcpos-ap';
+    s.textContent=${JSON.stringify(hideCss)};
+    (document.head||document.documentElement).appendChild(s);
+  }
+  function hide(){
+    injectCSS();
+    H.forEach(function(t){
+      document.querySelectorAll('[data-testid="'+t+'"]').forEach(function(el){
+        el.style.setProperty('display','none','important');
+      });
+    });
+    /* Masque aussi la cloche par aria-label */
+    ['Notifications','Open notification center'].forEach(function(label){
+      document.querySelectorAll('[aria-label="'+label+'"]').forEach(function(el){
+        el.style.setProperty('display','none','important');
+      });
+    });
+  }
+  hide();
+  if(!window.__ap){
+    window.__ap=true;
+    [100,300,700,1500,3000].forEach(function(ms){setTimeout(hide,ms);});
+    setInterval(hide,500);
+    new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});
+  }
+})();`;
+
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
 			log.error('Anti-pro: ' + err.message);
 		});
 	}
 
-	/* ── Panneaux custom + caisse ────────────────────────────────────────── */
+	/* ═══════════════════════════════════════════════════════════════════════
+	   BLOC 2 — Panneaux custom + caisse
+	   ═══════════════════════════════════════════════════════════════════════ */
 	function runMain(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		const REST = WP_REST_BASE;
-		const js = '(function(){'
 
-			/* Guard : POS actif = search-products présent */
-			+ 'var inPos=!!document.querySelector(\'[data-testid="search-products"]\');'
-			+ 'if(!inPos){if(window.__mi){window.__mi=false;}return;}'
-			+ 'if(window.__mi)return;'
-			+ 'window.__mi=true;'
-			+ 'var REST="' + REST + '";'
+		const js = `(function(){
+  /* Guard : POS actif = search-products présent */
+  var inPos=!!document.querySelector('[data-testid="search-products"]');
+  if(!inPos){if(window.__mi){window.__mi=false;}return;}
+  if(window.__mi)return;
+  window.__mi=true;
 
-			/* Textes Pro des panneaux à remplacer */
-			+ 'var PT={'
-			+ '"products":"Ajustez les prix",'
-			+ '"orders":"Rouvrez et imprimez",'
-			+ '"customers":"Ajoutez de nouveaux clients",'
-			+ '"reports":"Debloquez les rapports"'
-			+ '};'
+  var REST=${JSON.stringify(WP_REST_BASE)};
 
-			/* REST helper */
-			+ 'function rp(ep,data,cb){'
-			+ 'fetch(REST+ep,{method:"POST",headers:{"Content-Type":"application/json"},'
-			+ 'body:JSON.stringify(data),credentials:"include"})'
-			+ '.then(function(r){return r.json();})'
-			+ '.then(cb)'
-			+ '.catch(function(e){cb({error:e.message});});'
-			+ '}'
+  /* Textes Pro des panneaux à remplacer */
+  var PT={
+    products:'Ajustez les prix',
+    orders:'Rouvrez et imprimez',
+    customers:'Ajoutez de nouveaux clients',
+    reports:'Debloquez les rapports'
+  };
 
-			/* loadPanel — flag loadingPanel uniquement pour bloquer
-			   le MutationObserver, PAS les actions utilisateur volontaires */
-			+ 'var loadingPanel=false;'
-			+ 'function loadPanel(pid,wrap,cv,force){'
-			/* force=true : action utilisateur, bypass du flag */
-			+ 'if(loadingPanel&&!force)return;'
-			+ 'loadingPanel=true;'
-			+ 'wrap.innerHTML="<p style=\'padding:20px;color:#646970;font-family:sans-serif\'>Chargement...</p>";'
-			+ 'var body={panel_id:pid};if(cv)body.caisse_view=cv;'
-			+ 'rp("/panel",body,function(d){'
-			+ 'loadingPanel=false;'
-			+ 'if(!d||!d.html){'
-			+ 'wrap.innerHTML="<p style=\'padding:20px;color:#c00;font-family:sans-serif\'>"+(d&&d.error?d.error:"Erreur")+"</p>";'
-			+ 'return;'
-			+ '}'
-			+ 'wrap.innerHTML=d.html;'
-			+ 'wrap.querySelectorAll("script").forEach(function(s){'
-			+ 'var ns=document.createElement("script");'
-			+ 'ns.textContent=s.textContent;'
-			+ 's.parentNode.replaceChild(ns,s);'
-			+ '});'
-			+ '});'
-			+ '}'
+  /* REST helper */
+  function rp(ep,data,cb){
+    fetch(REST+ep,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(data),
+      credentials:'include'
+    }).then(function(r){return r.json();})
+      .then(cb)
+      .catch(function(e){cb({error:e.message});});
+  }
 
-			/* findPanel */
-			+ 'function findPanel(){'
-			/* Cherche le PLUS PETIT container avec le texte Pro
-			   r.x >= 40 exclut les wrappers qui incluent la sidebar (x=0) */
-			+ 'var best=null,bestScore=Infinity;'
-			+ 'document.querySelectorAll("div,section,aside").forEach(function(el){'
-			+ 'var r=el.getBoundingClientRect();'
-			+ 'if(r.width<200||r.height<80)return;'
-			+ 'if(r.x<40)return;'
-			+ 'if(r.x>450)return;'
-			+ 'if(r.width<window.innerWidth*0.25)return;'
-			+ 'if(el.querySelector("#wpp"))return;'
-			+ 'var txt=el.textContent||"";'
-			+ 'for(var pid in PT){'
-			+ 'if(txt.indexOf(PT[pid])!==-1){'
-			+ 'var score=r.width*r.height;'
-			/* Prend le PLUS PETIT container (évite d'englober la sidebar) */
-			+ 'if(score<bestScore){bestScore=score;best={el:el,pid:pid};}'
-			+ '}}'
-			+ '});return best;'
-			+ '}'
-			/* injectPanel — respecte loadingPanel pour éviter les boucles */
-			+ 'var injecting=false,cPid=null,cWrap=null;'
-			+ 'function injectPanel(){'
-			+ 'if(injecting||loadingPanel)return;'
-			+ 'if(!document.querySelector(\'[data-testid="search-products"]\'))return;'
-			+ 'var found=findPanel();if(!found)return;'
-			+ 'var el=found.el,pid=found.pid;'
-			+ 'var ex=el.querySelector("#wpp");'
-			+ 'if(ex&&ex.getAttribute("data-pid")===pid)return;'
-			+ 'if(ex){ex.setAttribute("data-pid",pid);cPid=pid;cWrap=ex;loadPanel(pid,ex,null,true);return;}'
-			+ 'injecting=true;'
-			+ 'el.innerHTML="";'
-			+ 'el.style.cssText="display:flex;flex-direction:column;flex:1;padding:0;overflow:auto;";'
-			+ 'var w=document.createElement("div");'
-			+ 'w.id="wpp";w.setAttribute("data-pid",pid);'
-			+ 'el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w,null,true);'
-			+ 'setTimeout(function(){injecting=false;},600);'
-			+ '}'
+  /* loadPanel — flag loadingPanel uniquement pour le MutationObserver.
+     force=true : action utilisateur volontaire, bypass du flag. */
+  var loadingPanel=false;
+  function loadPanel(pid,wrap,cv,force){
+    if(loadingPanel&&!force)return;
+    loadingPanel=true;
+    wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement...</p>';
+    var body={panel_id:pid};
+    if(cv)body.caisse_view=cv;
+    rp('/panel',body,function(d){
+      loadingPanel=false;
+      if(!d||!d.html){
+        wrap.innerHTML='<p style="padding:20px;color:#c00;font-family:sans-serif">'+(d&&d.error?d.error:'Erreur')+'</p>';
+        return;
+      }
+      wrap.innerHTML=d.html;
+      wrap.querySelectorAll('script').forEach(function(s){
+        var ns=document.createElement('script');
+        ns.textContent=s.textContent;
+        s.parentNode.replaceChild(ns,s);
+      });
+    });
+  }
 
-			/* window._wcpos_action — compatible avec le snippet WPCode */
-			+ 'window._wcpos_action=null;'
+  /* findPanel — cherche le PLUS PETIT container avec le texte Pro.
+     r.x >= 40 exclut les wrappers qui englobent la sidebar (x≈0). */
+  function findPanel(){
+    var best=null,bestScore=Infinity;
+    document.querySelectorAll('div,section,aside').forEach(function(el){
+      var r=el.getBoundingClientRect();
+      if(r.width<200||r.height<80)return;
+      if(r.x<40)return;
+      if(r.x>450)return;
+      if(r.width<window.innerWidth*0.25)return;
+      if(el.querySelector('#wpp'))return;
+      var txt=el.textContent||'';
+      for(var pid in PT){
+        if(txt.indexOf(PT[pid])!==-1){
+          var score=r.width*r.height;
+          if(score<bestScore){bestScore=score;best={el:el,pid:pid};}
+        }
+      }
+    });
+    return best;
+  }
 
-			+ 'function submitCaisse(action,data){'
-			+ 'var fd={};'
-			+ 'if(data&&typeof data.forEach==="function"){'
-			+ 'data.forEach(function(v,k){fd[k]=v;});'
-			+ '}else if(data&&typeof data==="object"){fd=data;}'
-			+ 'var body=Object.assign({wcpos_caisse_action:action},fd);'
-			+ 'rp("/caisse/submit",body,function(d){'
-			+ 'hideOverlay();'
-			+ 'if(cWrap&&cPid)loadPanel(cPid,cWrap,"dashboard",true);'
-			+ 'setTimeout(chkCaisse,400);'
-			+ '});'
-			+ '}'
+  /* injectPanel — respecte loadingPanel pour éviter les boucles MutationObserver */
+  var injecting=false,cPid=null,cWrap=null;
+  function injectPanel(){
+    if(injecting||loadingPanel)return;
+    if(!document.querySelector('[data-testid="search-products"]'))return;
+    var found=findPanel();
+    if(!found)return;
+    var el=found.el,pid=found.pid;
+    var ex=el.querySelector('#wpp');
+    if(ex&&ex.getAttribute('data-pid')===pid)return;
+    if(ex){ex.setAttribute('data-pid',pid);cPid=pid;cWrap=ex;loadPanel(pid,ex,null,true);return;}
+    injecting=true;
+    el.innerHTML='';
+    el.style.cssText='display:flex;flex-direction:column;flex:1;padding:0;overflow:auto;';
+    var w=document.createElement('div');
+    w.id='wpp';w.setAttribute('data-pid',pid);
+    el.appendChild(w);cPid=pid;cWrap=w;loadPanel(pid,w,null,true);
+    setTimeout(function(){injecting=false;},600);
+  }
 
-			/* Polling — actions nav utilisateur passent en force=true
-			   pour ne jamais être bloquées par loadingPanel */
-			+ 'setInterval(function(){'
-			+ 'if(!window._wcpos_action)return;'
-			+ 'var a=window._wcpos_action;window._wcpos_action=null;'
-			+ 'if(a.type==="nav"&&cWrap&&cPid){'
-			/* Force reset + appel avec force=true */
-			+ 'loadingPanel=false;'
-			+ 'loadPanel(cPid,cWrap,a.view,true);'
-			+ '}'
-			+ 'if(a.type==="submit")submitCaisse(a.action,a.data);'
-			+ '},100);'
+  /* window._wcpos_action — compatible avec le snippet WPCode caisse */
+  window._wcpos_action=null;
 
-			+ 'new MutationObserver(function(){injectPanel();}).observe(document.body,{childList:true,subtree:true});'
+  function submitCaisse(action,data){
+    var fd={};
+    if(data&&typeof data.forEach==='function'){
+      data.forEach(function(v,k){fd[k]=v;});
+    }else if(data&&typeof data==='object'){fd=data;}
+    var body=Object.assign({wcpos_caisse_action:action},fd);
+    rp('/caisse/submit',body,function(d){
+      hideOverlay();
+      if(cWrap&&cPid)loadPanel(cPid,cWrap,'dashboard',true);
+      setTimeout(chkCaisse,400);
+    });
+  }
 
-			/* Overlay caisse fermée */
-			+ 'function hasPP(){return !!document.getElementById("wpp");}'
-			+ 'function inPOS(){return !!document.querySelector(\'[data-testid="search-products"]\');}'
+  /* Polling — actions nav utilisateur passent en force=true */
+  setInterval(function(){
+    if(!window._wcpos_action)return;
+    var a=window._wcpos_action;
+    window._wcpos_action=null;
+    if(a.type==='nav'&&cWrap&&cPid){
+      loadingPanel=false;
+      loadPanel(cPid,cWrap,a.view,true);
+    }
+    if(a.type==='submit')submitCaisse(a.action,a.data);
+  },100);
 
-			+ 'function showOverlay(msg){'
-			+ 'if(document.getElementById("wco"))return;'
-			+ 'var ov=document.createElement("div");ov.id="wco";'
-			+ 'ov.style.cssText="position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
-			+                    'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-			+                    'text-align:center;padding:24px;font-family:sans-serif;color:#fff";'
-			+ 'ov.innerHTML='
-			+ '"<div style=\'font-size:3em;margin-bottom:14px\'>&#128274;</div>"'
-			+ '+"<h2 style=\'font-size:1.2em;font-weight:700;margin:0 0 8px\'>Caisse fermee</h2>"'
-			+ '+"<p style=\'font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px\'>"'
-			+ '+(msg||"La caisse est fermee. Ouvrez-la depuis l\'onglet Clients.")+"</p>"'
-			/* Bouton ferme simplement l'overlay — pas de navigation risquée */
-			+ '+"<button id=\'wcb\' style=\'background:#00a32a;color:#fff;border:none;padding:10px 22px;'
-			+   'border-radius:6px;font-size:.95em;cursor:pointer\'>OK, compris</button>";'
-			+ 'document.body.appendChild(ov);'
-			+ 'var btn=document.getElementById("wcb");'
-			+ 'if(btn){btn.addEventListener("click",function(){ov.remove();});}'
-			+ '}'
+  new MutationObserver(function(){injectPanel();})
+    .observe(document.body,{childList:true,subtree:true});
 
-			+ 'function hideOverlay(){'
-			+ 'var ov=document.getElementById("wco");'
-			+ 'if(ov)ov.style.setProperty("display","none","important");'
-			+ '}'
+  /* Overlay caisse fermée */
+  function hasPP(){return !!document.getElementById('wpp');}
+  function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
 
-			+ 'function chkCaisse(){'
-			+ 'if(!inPOS())return;'
-			+ 'rp("/caisse/status",{},function(d){'
-			+ 'if(!d||d.error)return;'
-			+ 'if(d.open){hideOverlay();}'
-			+ 'else if(!hasPP()){showOverlay(d.message);'
-			+ 'var ov=document.getElementById("wco");'
-			+ 'if(ov)ov.style.setProperty("display","flex","important");}'
-			+ '});'
-			+ '}'
+  function showOverlay(msg){
+    if(document.getElementById('wco'))return;
+    var ov=document.createElement('div');
+    ov.id='wco';
+    ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
+      +'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+      +'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
+    ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
+      +'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermee</h2>'
+      +'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
+        +(msg||'La caisse est fermee. Ouvrez-la depuis l\'onglet Clients.')+'</p>'
+      +'<button id="wcb" style="background:#00a32a;color:#fff;border:none;padding:10px 22px;'
+        +'border-radius:6px;font-size:.95em;cursor:pointer">OK, compris</button>';
+    document.body.appendChild(ov);
+    var btn=document.getElementById('wcb');
+    if(btn){btn.addEventListener('click',function(){ov.remove();});}
+  }
 
-			+ 'var pws=false;'
-			+ 'setInterval(function(){'
-			+ 'if(!inPOS())return;'
-			+ 'if(hasPP()){hideOverlay();pws=true;}'
-			+ 'else if(pws){pws=false;chkCaisse();}'
-			+ '},300);'
+  function hideOverlay(){
+    var ov=document.getElementById('wco');
+    if(ov)ov.style.setProperty('display','none','important');
+  }
 
-			+ 'chkCaisse();setInterval(chkCaisse,60000);'
-			+ 'console.log("wcpos 2.6 OK");'
-			+ '})();';
+  function chkCaisse(){
+    if(!inPOS())return;
+    rp('/caisse/status',{},function(d){
+      if(!d||d.error)return;
+      if(d.open){hideOverlay();}
+      else if(!hasPP()){
+        showOverlay(d.message);
+        var ov=document.getElementById('wco');
+        if(ov)ov.style.setProperty('display','flex','important');
+      }
+    });
+  }
+
+  var pws=false;
+  setInterval(function(){
+    if(!inPOS())return;
+    if(hasPP()){hideOverlay();pws=true;}
+    else if(pws){pws=false;chkCaisse();}
+  },300);
+
+  chkCaisse();
+  setInterval(chkCaisse,60000);
+  console.log('wcpos 2.8 OK');
+})();`;
 
 		mainWindow.webContents.executeJavaScript(js).catch((err: Error) => {
 			log.error('Main inject: ' + err.message);
