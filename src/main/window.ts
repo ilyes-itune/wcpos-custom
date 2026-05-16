@@ -41,7 +41,13 @@ export const createWindow = (): void => {
 	);
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
-		(d, cb) => cb({ requestHeaders: { ...d.requestHeaders } })
+		(d, cb) => {
+			/* Force Origin pour que ACAO=wcpos://* matche exactement
+			   et que Chromium/CORB valide la réponse cross-origin */
+			const headers = { ...d.requestHeaders };
+			headers['Origin'] = 'wcpos://-';
+			cb({ requestHeaders: headers });
+		}
 	);
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
@@ -52,6 +58,9 @@ export const createWindow = (): void => {
 				      'access-control-allow-methods','access-control-allow-headers']
 				    .includes(k.toLowerCase())) h[k] = v as string[];
 			}
+			/* Retire nosniff pour que Chromium puisse lire le JSON */
+			delete h['X-Content-Type-Options'];
+			delete h['x-content-type-options'];
 			h['Access-Control-Allow-Origin']      = ['wcpos://-'];
 			h['Access-Control-Allow-Credentials'] = ['true'];
 			h['Access-Control-Allow-Methods']     = ['GET, POST, OPTIONS'];
@@ -73,6 +82,8 @@ export const createWindow = (): void => {
 		const hideCss = HIDE.map(t => `[data-testid='${t}']`).join(',')
 			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		const js = `(function(){
+			if(!document||!document.documentElement)return;
+			try{
 			var H=${JSON.stringify(HIDE)};
 			function css(){
 				if(document.getElementById('wcpos-ap'))return;
@@ -100,8 +111,12 @@ export const createWindow = (): void => {
 				setInterval(hide,500);
 				new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});
 			}
+			}catch(e){window.__wcpos_err=e.stack||e.message;console.error('wcpos ap:',e);}
 		})();`;
-		mainWindow.webContents.executeJavaScript(js).catch((e: Error) => log.error('Anti-pro: '+e.message));
+		mainWindow.webContents.executeJavaScript(js)
+				.then(() => mainWindow?.webContents.executeJavaScript('window.__wcpos_err||null')
+					.then((err: string|null) => { if(err) log.error('Anti-pro renderer: '+err); }))
+				.catch((e: Error) => log.error('Anti-pro: '+e.message));
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
@@ -112,6 +127,8 @@ export const createWindow = (): void => {
 	function runMain(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const js = `(function(){
+			if(!document||!document.body)return;
+			try{
 			var inPos=!!document.querySelector('[data-testid="search-products"]');
 			if(!inPos){if(window.__mi)window.__mi=false;return;}
 			if(window.__mi)return;
@@ -295,13 +312,22 @@ export const createWindow = (): void => {
 
 			chkCaisse();setInterval(chkCaisse,60000);
 			console.log('wcpos 3.4 OK');
+			}catch(e){window.__wcpos_err=e.stack||e.message;console.error('wcpos main:',e);}
 		})();`;
-		mainWindow.webContents.executeJavaScript(js).catch((e: Error) => log.error('Main inject: '+e.message));
+		mainWindow.webContents.executeJavaScript(js)
+				.then(() => mainWindow?.webContents.executeJavaScript('window.__wcpos_err||null')
+					.then((err: string|null) => { if(err) log.error('Main renderer: '+err); }))
+				.catch((e: Error) => log.error('Main inject: '+e.message));
 	}
 
-	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); runAntiPro(); runMain(); });
-	mainWindow.webContents.on('did-navigate', () => { runAntiPro(); runMain(); });
-	mainWindow.webContents.on('did-navigate-in-page', () => { runAntiPro(); runMain(); });
+		let _navDebounce: ReturnType<typeof setTimeout> | null = null;
+	function _scheduleInject() {
+		if (_navDebounce) clearTimeout(_navDebounce);
+		_navDebounce = setTimeout(() => { _navDebounce = null; runAntiPro(); runMain(); }, 300);
+	}
+	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); _scheduleInject(); });
+	mainWindow.webContents.on('did-navigate', () => { _scheduleInject(); });
+	mainWindow.webContents.on('did-navigate-in-page', () => { _scheduleInject(); });
 
 	let pollCount = 0;
 	const pollTimer = setInterval(() => {
