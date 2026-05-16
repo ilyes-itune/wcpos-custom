@@ -21,7 +21,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 2.9';
+const APP_VERSION  = 'WCPOS Custom 3.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -218,20 +218,27 @@ export const createWindow = (): void => {
   /* findPanel — cherche le PLUS PETIT container avec le texte Pro.
      r.x >= 40 exclut les wrappers qui englobent la sidebar (x≈0). */
   function findPanel(){
-    var best=null,bestScore=Infinity;
+    /* Cherche le PLUS GRAND container valide — 100% relatif à la fenêtre.
+       Règles (toutes en % pour fonctionner à toute résolution) :
+       - Exclut wrappers plein-écran : x=0 ET largeur > 85% de l'écran
+       - Exclut éléments trop à droite : x > 75% de l'écran
+       - Exclut éléments trop étroits : largeur < 20% de l'écran
+       - Exclut éléments trop bas : hauteur < 5% de l'écran
+       La carte Pro upsell (max-w-xl, centrée) passe toujours ces filtres. */
+    var W=window.innerWidth, H=window.innerHeight;
+    var best=null,bestScore=0;
     document.querySelectorAll('div,section,aside').forEach(function(el){
       var r=el.getBoundingClientRect();
-      if(r.width<200||r.height<80)return;
-      /* Skip uniquement les wrappers plein-écran qui englobent la sidebar */
-      if(r.x===0 && r.width > window.innerWidth*0.85)return;
-      if(r.x>500)return;
-      if(r.width<window.innerWidth*0.25)return;
-      if(el.querySelector('#wpp'))return;
+      if(r.width < W*0.15 || r.height < H*0.05) return;
+      if(r.x===0 && r.width > W*0.85) return;
+      if(r.x > W*0.75) return;
+      if(r.width < W*0.20) return;
+      if(el.querySelector('#wpp')) return;
       var txt=el.textContent||'';
       for(var pid in PT){
         if(txt.indexOf(PT[pid])!==-1){
           var score=r.width*r.height;
-          if(score<bestScore){bestScore=score;best={el:el,pid:pid};}
+          if(score>bestScore){bestScore=score;best={el:el,pid:pid};}
         }
       }
     });
