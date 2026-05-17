@@ -16,11 +16,10 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.5';
+const APP_VERSION  = 'WCPOS Custom 4.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
-/* ── Détection d'onglet depuis l'URL ──────────────────────────────────────*/
 function tabFromUrl(url: string): string | null {
 	try {
 		const segments = new URL(url).pathname.replace(/\/+$/,'').split('/').filter(Boolean);
@@ -42,7 +41,7 @@ export const createWindow = (): void => {
 
 	if (isDevelopment) mainWindow.webContents.openDevTools();
 
-	/* ── Logging renderer → main.log ────────────────────────────────────── */
+	/* ── Logging renderer ────────────────────────────────────────────────── */
 	mainWindow.webContents.on('console-message', (_e, level, message, line, src) => {
 		const short = (src ?? '').split('/').pop() ?? '';
 		const tag   = `[R ${short}:${line}]`;
@@ -59,7 +58,7 @@ export const createWindow = (): void => {
 	mainWindow.webContents.on('unresponsive', () => log.error('[renderer] UNRESPONSIVE'));
 	mainWindow.webContents.on('responsive',   () => log.info ('[renderer] responsive'));
 
-	/* ── Blocage connexions externes ─────────────────────────────────────── */
+	/* ── Blocage réseau ──────────────────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
 		{ urls: ['*://*.novu.co/*','*://novu.co/*','*://updates.wcpos.com/*',
 		         '*://wcpos.com/*','*://*.wcpos.com/*','*://api.github.com/repos/wcpos/*'] },
@@ -91,7 +90,7 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub : CSS statique, une seule injection, aucun MO.
+	   BLOC 1 — Anti-pub : CSS statique, une seule injection.
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -112,14 +111,25 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse/overlay (une seule fois par chargement de page).
+	   BLOC 2 — Setup caisse/overlay.
+	   Base exacte v4.1 + exempt users (v4.2) + navToClients corrigé (v4.5).
+
+	   navToClients — 2 méthodes sûres SANS toucher au DOM React :
+	     M1 : cherche <a href="...customers..."> et le clique
+	     M2 : réécrit window.location.href (même origin → React Navigation
+	          intercepte la navigation sans rechargement de page)
+	   Supprimé par rapport à v4.3 :
+	     - M2 aria-label avec textContent (cliquait des boutons dans #wpp)
+	     - M3 sidebar click par index (cliquait le mauvais onglet)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__setup||!document||!document.body)return;
 			try{
-				if(!document.querySelector('[data-testid="search-products"]')){console.log('[setup] hors POS');return;}
+				if(!document.querySelector('[data-testid="search-products"]')){
+					console.log('[setup] hors POS'); return;
+				}
 				window.__setup=true;
 				console.log('[setup] v4.5');
 				var REST=${JSON.stringify(WP_REST_BASE)};
@@ -127,8 +137,7 @@ export const createWindow = (): void => {
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
 						body:JSON.stringify(data),credentials:'include'})
-						.then(function(r){return r.json();})
-						.then(cb)
+						.then(function(r){return r.json();}).then(cb)
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
@@ -150,45 +159,39 @@ export const createWindow = (): void => {
 					});
 				};
 
-				/* ── navToClients : 3 méthodes sûres ─────────────────── */
+				/* ── navToClients — v4.5 ─────────────────────────────────
+				   M1 : <a href> contenant "customers" → clic direct
+				   M2 : window.location.href = URL avec dernier segment = customers
+				        Même origin → React Navigation gère sans rechargement.
+				   Pas de querySelectorAll('[role=button]') + textContent
+				   (risque de cliquer des éléments dans #wpp ou le panel caisse). */
 				window.__navToClients=function(){
 					console.log('[nav] url='+window.location.href);
-					/* M1 : <a href> contenant 'customers' */
+					/* M1 */
 					var found=false;
 					document.querySelectorAll('a[href]').forEach(function(a){
 						if(found)return;
-						var h=(a.getAttribute('href')||'').toLowerCase();
-						if(h.indexOf('customers')!==-1){
-							console.log('[nav] M1 href='+h);
+						if((a.getAttribute('href')||'').toLowerCase().indexOf('customers')!==-1){
+							console.log('[nav] M1 href='+a.getAttribute('href'));
 							a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 							found=true;
 						}
 					});
 					if(found)return;
-					/* M2 : aria-label uniquement (pas textContent — trop risqué) */
-					document.querySelectorAll('[role="tab"],[role="button"],[role="link"]').forEach(function(el){
-						if(found)return;
-						var label=(el.getAttribute('aria-label')||'').toLowerCase();
-						if(label.indexOf('customer')!==-1||label.indexOf('client')!==-1){
-							console.log('[nav] M2 aria='+label);
-							el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-							found=true;
-						}
-					});
-					if(found)return;
-					/* M3 : réécriture URL + location.href (même origin → pas de rechargement) */
+					/* M2 : réécriture URL propre */
 					try{
-						var url=window.location.href;
-						var parsed=new URL(url);
-						var segs=parsed.pathname.replace(/\/+$/,'').split('/');
-						segs[segs.length-1]='customers';
-						var newUrl=parsed.origin+segs.join('/');
-						console.log('[nav] M3 location.href='+newUrl);
-						if(newUrl!==url) window.location.href=newUrl;
-					}catch(e){console.error('[nav] M3',e.message);}
+						var parsed=new URL(window.location.href);
+						var segs=parsed.pathname.replace(/\/+$/,'').split('/').filter(Boolean);
+						/* Remplace le dernier segment par "customers" */
+						if(segs.length>0) segs[segs.length-1]='customers';
+						else segs.push('customers');
+						var newUrl=parsed.origin+'/'+segs.join('/');
+						console.log('[nav] M2 location.href='+newUrl);
+						window.location.href=newUrl;
+					}catch(e){console.error('[nav] M2',e.message);}
 				};
 
-				/* ── Overlay caisse fermée ────────────────────────────── */
+				/* ── Overlay caisse fermée ───────────────────────────────── */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco'))return;
 					var ov=document.createElement('div');ov.id='wco';
@@ -214,7 +217,10 @@ export const createWindow = (): void => {
 					if(ov){ov.remove();console.log('[overlay] hide');}
 				};
 
-				function hasPP(){var w=document.getElementById('wpp');return !!(w&&w.style.display!=='none'&&w.innerHTML.length>100);}
+				function hasPP(){
+					var w=document.getElementById('wpp');
+					return !!(w&&w.style.display!=='none'&&w.innerHTML.length>100);
+				}
 				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
 				function currentTab(){
 					var u=window.location.href.toLowerCase();
@@ -223,6 +229,7 @@ export const createWindow = (): void => {
 					return null;
 				}
 
+				/* Utilisateurs exemptés de l'overlay caisse fermée */
 				var EXEMPT=${JSON.stringify(['ilyes','eddy','jjg','treso'])};
 
 				function chkCaisse(){
@@ -244,11 +251,15 @@ export const createWindow = (): void => {
 					if(!window._wcpos_action)return;
 					var a=window._wcpos_action;window._wcpos_action=null;
 					var wpp=document.getElementById('wpp');
-					if(a.type==='nav'&&wpp){window.__loadingPanel=false;window.__loadPanel(wpp.getAttribute('data-pid'),wpp,a.view,true);}
+					if(a.type==='nav'&&wpp){
+						window.__loadingPanel=false;
+						window.__loadPanel(wpp.getAttribute('data-pid'),wpp,a.view,true);
+					}
 					if(a.type==='submit'){
 						var fd={};
-						if(a.data&&typeof a.data.entries==='function'){for(var p of a.data.entries()){fd[p[0]]=p[1];}}
-						else if(a.data&&typeof a.data==='object'){fd=Object.assign({},a.data);}
+						if(a.data&&typeof a.data.entries==='function'){
+							for(var p of a.data.entries()){fd[p[0]]=p[1];}
+						}else if(a.data&&typeof a.data==='object'){fd=Object.assign({},a.data);}
 						rp('/caisse/submit',Object.assign({wcpos_caisse_action:a.action},fd),function(d){
 							window.__hideOverlay();
 							var wpp2=document.getElementById('wpp');
@@ -267,7 +278,7 @@ export const createWindow = (): void => {
 					else if(_pws){_pws=false;chkCaisse();}
 				},1000);
 
-				/* Resize : retire #wpp pour forcer recalcul */
+				/* Resize */
 				if(!window.__wcpos_resize){
 					window.__wcpos_resize=true;
 					var _rt=null;
@@ -286,19 +297,15 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 3 — Injection panel pour un onglet donné.
+	   BLOC 3 — Injection panel.
 
-	   findPanel() — stratégie v4.5 :
-	   1. Passe texte : textContent.indexOf(sig) → pas de reflow
-	   2. Passe géométrie : getBoundingClientRect() sur les candidats textuels
-	      Filtres :
-	        min : width > 15% écran,  height > 5% écran
-	        max : width < 80% écran,  height < 65% écran  ← NOUVEAU v4.5
-	              x < 75% écran,      x > 0 (pas à bord gauche)
-	      Score : plus grand gagnant parmi les éléments de TAILLE RAISONNABLE.
-	      Le double filtre min/max exclut :
-	        - les éléments trop petits (leaf nodes, icônes)
-	        - les containers trop grands (toute la page, zone de contenu entière)
+	   findPanel() — identique à v4.1 (base stable confirmée) :
+	   - Passe 1 : textContent match, pas de reflow
+	   - Filtre feuille : rejette un élément si un de ses enfants DIRECTS
+	     contient aussi la signature → on garde l'élément le plus proche
+	     du texte sans remonter dans tous les ancêtres
+	   - Passe 2 : getBoundingClientRect sur les feuilles candidates
+	   - Plus grand score gagnant
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -306,7 +313,7 @@ export const createWindow = (): void => {
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
 				var w=document.getElementById('wpp');
-				if(w){w.style.setProperty('display','none','important');console.log('[panel] cache tab=null');}
+				if(w){w.style.setProperty('display','none','important');console.log('[panel] cache');}
 			})();`).catch(() => {});
 			return;
 		}
@@ -319,69 +326,66 @@ export const createWindow = (): void => {
 		};
 		const sig = PT[tab];
 		if (!sig) return;
-		log.info(`[panel] → tab=${tab}`);
+		log.info(`[panel] → ${tab}`);
 
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
 				var sig=${JSON.stringify(sig)}.toLowerCase();
-				if(!document.querySelector('[data-testid="search-products"]')){console.log('[panel] hors POS');return;}
-				if(!window.__setup){console.log('[panel] setup absent');return;}
+				if(!document.querySelector('[data-testid="search-products"]')){
+					console.log('[panel] hors POS'); return;
+				}
+				if(!window.__setup){console.log('[panel] setup absent'); return;}
 
 				var wpp=document.getElementById('wpp');
 
-				/* Panel déjà chargé pour cet onglet → ré-afficher uniquement */
+				/* Panel déjà chargé → ré-afficher */
 				if(wpp&&wpp.getAttribute('data-pid')===tab&&wpp.innerHTML.length>100){
 					wpp.style.removeProperty('display');
 					console.log('[panel] re-affiche tab='+tab);
 					return;
 				}
 
-				/* ── findPanel ──────────────────────────────────────────────
-				   Passe 1 : texte  (pas de reflow — filtre les ancêtres aussi)
-				   Passe 2 : géométrie sur les éléments textuels
-				   Double filtre min+max : exclut éléments trop petits ET trop grands.
-				   Plus grand score parmi les éléments de taille raisonnable.      */
 				var W=window.innerWidth, H=window.innerHeight;
 				var best=null, bestScore=0, checked=0;
 
 				document.querySelectorAll('div,section,aside').forEach(function(el){
 					if(el.id==='wpp')return;
+					/* Passe 1 : texte, pas de reflow */
 					if((el.textContent||'').toLowerCase().indexOf(sig)===-1)return;
+					/* Filtre feuille (identique v4.1) :
+					   rejette si un enfant DIRECT contient aussi la signature.
+					   Évite de remonter dans les ancêtres trop larges
+					   tout en gardant le container upsell direct. */
+					var childHas=false;
+					for(var i=0;i<el.children.length;i++){
+						if((el.children[i].textContent||'').toLowerCase().indexOf(sig)!==-1){
+							childHas=true; break;
+						}
+					}
+					if(childHas)return;
 					checked++;
+					/* Passe 2 : géométrie sur les feuilles candidates */
 					var r=el.getBoundingClientRect();
-
-					/* Filtres MIN — trop petit */
-					if(r.width  < W*0.15)return;
-					if(r.height < H*0.05)return;
-
-					/* Filtres MAX — trop grand (container global, zone de contenu entière) */
-					if(r.width  > W*0.80)return;
-					if(r.height > H*0.65)return;
-
-					/* Filtres POSITION */
-					if(r.x < 0 || r.x > W*0.60)return;
-
+					if(r.width<W*0.15||r.height<H*0.05)return;
+					if(r.x===0&&r.width>W*0.85)return;
+					if(r.x>W*0.75||r.width<W*0.20)return;
 					var score=r.width*r.height;
 					if(score>bestScore){
-						bestScore=score;
-						best={el:el,r:r};
+						bestScore=score; best={el:el,r:r};
 						console.log('[panel] candidat tab='+tab+' score='+Math.round(score)
-							+' x='+Math.round(r.x)+' y='+Math.round(r.top)
-							+' w='+Math.round(r.width)+' h='+Math.round(r.height));
+							+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));
 					}
 				});
 
-				console.log('[panel] checked='+checked+' found='+(best?'OUI':'NON')+' tab='+tab);
+				console.log('[panel] checked='+checked+' found='+(best?'OUI':'NON'));
 
 				if(!best){
 					if(wpp)wpp.style.setProperty('display','none','important');
 					return;
 				}
 
-				/* ── Calcul position #wpp ───────────────────────────────────
-				   navLeft   : bord droit de la sidebar (barre d'icônes gauche)
-				   hdrBottom : bas du header WCPOS (max de tous les éléments fixes en haut) */
+				/* Position #wpp */
 				var navLeft=(function(){
 					var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
 					         '[class*="sidebar"]','nav[class]'];
@@ -395,10 +399,10 @@ export const createWindow = (): void => {
 
 				var hdrBottom=(function(){
 					var maxB=0;
-					var q='header,nav,[role="banner"],[role="navigation"],'
+					document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],'
 						+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
-						+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]';
-					document.querySelectorAll(q).forEach(function(e3){
+						+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
+					.forEach(function(e3){
 						var r3=e3.getBoundingClientRect();
 						if(r3.top<=5&&r3.width>W*0.5&&r3.height>10&&r3.height<200)
 							if(Math.round(r3.bottom)>maxB)maxB=Math.round(r3.bottom);
@@ -410,7 +414,7 @@ export const createWindow = (): void => {
 
 				if(wpp)wpp.remove();
 				var w=document.createElement('div');
-				w.id='wpp';w.setAttribute('data-pid',tab);
+				w.id='wpp'; w.setAttribute('data-pid',tab);
 				w.style.cssText='position:fixed'
 					+';top:'+hdrBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
 					+';z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
@@ -418,12 +422,10 @@ export const createWindow = (): void => {
 				best.el.style.setProperty('visibility','hidden','important');
 				window.__loadPanel(tab,w,null,true);
 			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
-		})();`).catch((e: Error) => log.error(`[panel] executeJS: ${e.message}`));
+		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
 	}
 
-	/* ════════════════════════════════════════════════════════════════════════
-	   ORCHESTRATION MAIN PROCESS
-	   ════════════════════════════════════════════════════════════════════════ */
+	/* ── Orchestration ───────────────────────────────────────────────────── */
 	let lastTab: string | null = null;
 
 	function onNavigate(label: string, url?: string): void {
@@ -443,17 +445,6 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 		log.info('[dom-ready]');
 		onNavigate('dom-ready');
-		setTimeout(() => {
-			mainWindow?.webContents.executeJavaScript(`(function(){
-				if(window.__wcpos_resize)return;window.__wcpos_resize=true;
-				var t=null;window.addEventListener('resize',function(){
-					clearTimeout(t);t=setTimeout(function(){
-						var w=document.getElementById('wpp');
-						if(w){w.remove();console.log('[resize] recalcul pid='+w.getAttribute('data-pid'));}
-					},400);
-				});
-			})();`).catch(()=>{});
-		}, 2000);
 	});
 	mainWindow.webContents.on('did-navigate', (_e, url) => {
 		log.info(`[did-navigate] ${url}`);
@@ -481,7 +472,9 @@ export const createWindow = (): void => {
 		if (process.env.START_MINIMIZED) mainWindow.minimize(); else mainWindow.show();
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
-	mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+		shell.openExternal(url); return { action: 'deny' };
+	});
 
 	let retryCount = 0;
 	mainWindow.webContents.on('did-fail-load', async (_e, _code, desc) => {
