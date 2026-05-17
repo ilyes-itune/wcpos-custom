@@ -16,14 +16,11 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.4';
+const APP_VERSION  = 'WCPOS Custom 4.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
-/* ── Détection d'onglet depuis l'URL ──────────────────────────────────────
-   WCPOS Electron : wcpos://-/pos/<registerId>/<tab>
-   On extrait le dernier segment de chemin non vide.
-   ────────────────────────────────────────────────────────────────────────  */
+/* ── Détection d'onglet depuis l'URL ──────────────────────────────────────*/
 function tabFromUrl(url: string): string | null {
 	try {
 		const segments = new URL(url).pathname.replace(/\/+$/,'').split('/').filter(Boolean);
@@ -45,27 +42,18 @@ export const createWindow = (): void => {
 
 	if (isDevelopment) mainWindow.webContents.openDevTools();
 
-	/* ════════════════════════════════════════════════════════════════════════
-	   LOGGING RENDERER → main.log
-	   console-message capture TOUTE la console renderer sans modifier preload.
-	   Niveaux Chromium : 0=verbose 1=info 2=warning 3=error
-	   ════════════════════════════════════════════════════════════════════════ */
+	/* ── Logging renderer → main.log ────────────────────────────────────── */
 	mainWindow.webContents.on('console-message', (_e, level, message, line, src) => {
 		const short = (src ?? '').split('/').pop() ?? '';
 		const tag   = `[R ${short}:${line}]`;
 		if      (level === 3) log.error(`${tag} ${message}`);
 		else if (level === 2) log.warn (`${tag} ${message}`);
 		else                  log.info (`${tag} ${message}`);
-		/* Recalcul du panel après resize : le renderer log '[resize] recalcul pid=...'
-		   → on récupère le pid et on re-injecte le panel (v3.9) */
 		if (message.startsWith('[resize] recalcul pid=')) {
 			const pid = message.replace('[resize] recalcul pid=', '').trim();
-			log.info(`[resize] re-injection pour tab=${pid}`);
 			setTimeout(() => runPanelForTab(pid || lastTab), 400);
 		}
 	});
-
-	/* Santé renderer */
 	mainWindow.webContents.on('render-process-gone', (_e, d) =>
 		log.error(`[renderer-gone] reason=${d.reason} exit=${d.exitCode}`));
 	mainWindow.webContents.on('unresponsive', () => log.error('[renderer] UNRESPONSIVE'));
@@ -79,7 +67,7 @@ export const createWindow = (): void => {
 	);
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
-		(d, cb) => { cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } }); }
+		(d, cb) => cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } })
 	);
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
@@ -88,7 +76,8 @@ export const createWindow = (): void => {
 			for (const [k,v] of Object.entries(d.responseHeaders ?? {})) {
 				if (!['access-control-allow-origin','access-control-allow-credentials',
 				      'access-control-allow-methods','access-control-allow-headers',
-				      'x-content-type-options'].includes(k.toLowerCase())) h[k] = v as string[];
+				      'x-content-type-options'].includes(k.toLowerCase()))
+					h[k] = v as string[];
 			}
 			h['Access-Control-Allow-Origin']      = ['wcpos://-'];
 			h['Access-Control-Allow-Credentials'] = ['true'];
@@ -102,77 +91,57 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub : CSS statique injecté une seule fois.
-	   Aucun MO, aucun setInterval. La feuille CSS reste active en permanence.
+	   BLOC 1 — Anti-pub : CSS statique, une seule injection, aucun MO.
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
 		              'view-demo-button','add-fee','add-shipping'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
-			+ `,[aria-label='Notifications'],[aria-label='Open notification center']`
-			+ `{display:none!important}`;
-		const js = `(function(){
+			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
+		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__ap||!document||!document.documentElement)return;
 			try{
 				window.__ap=true;
-				var s=document.createElement('style');
-				s.id='wcpos-ap';
+				var s=document.createElement('style');s.id='wcpos-ap';
 				s.textContent=${JSON.stringify(css)};
 				(document.head||document.documentElement).appendChild(s);
-				console.log('[ap] injecte');
-			}catch(e){ console.error('[ap]',e.message); }
-		})();`;
-		mainWindow.webContents.executeJavaScript(js)
-			.catch((e: Error) => log.error('[ap] executeJS: '+e.message));
+				console.log('[ap] OK');
+			}catch(e){console.error('[ap]',e.message);}
+		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse/overlay (une seule fois par chargement de page)
-	   Expose les fonctions globales __showOverlay, __hideOverlay, __loadPanel
-	   et démarre les intervalles de vérification caisse.
-	   Aucun MO. Aucune détection d'onglet ici.
+	   BLOC 2 — Setup caisse/overlay (une seule fois par chargement de page).
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-		const js = `(function(){
+		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__setup||!document||!document.body)return;
 			try{
-				if(!document.querySelector('[data-testid="search-products"]')){
-					console.log('[setup] hors POS');
-					return;
-				}
+				if(!document.querySelector('[data-testid="search-products"]')){console.log('[setup] hors POS');return;}
 				window.__setup=true;
-				console.log('[setup] debut v4.4');
+				console.log('[setup] v4.5');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
-					console.log('[rp] POST '+ep);
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
 						body:JSON.stringify(data),credentials:'include'})
-						.then(function(r){return r.json();}).then(function(d){
-							console.log('[rp] reponse '+ep+' ok='+!!d);
-							cb(d);
-						}).catch(function(e){
-							console.error('[rp] erreur '+ep+':',e.message);
-							cb({error:e.message});
-						});
+						.then(function(r){return r.json();})
+						.then(cb)
+						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
-					console.log('[loadPanel] pid='+pid+(cv?' cv='+cv:''));
-					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement...</p>';
-					var body={panel_id:pid};if(cv)body.caisse_view=cv;
-					rp('/panel',body,function(d){
+					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
+					rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
 						window.__loadingPanel=false;
 						if(!d||!d.html){
-							console.error('[loadPanel] pas de html:',JSON.stringify(d));
 							wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
 							return;
 						}
-						console.log('[loadPanel] html recu len='+d.html.length);
 						wrap.innerHTML=d.html;
 						wrap.querySelectorAll('script').forEach(function(s){
 							var ns=document.createElement('script');ns.textContent=s.textContent;
@@ -181,121 +150,72 @@ export const createWindow = (): void => {
 					});
 				};
 
-				/* ── Navigation vers l'onglet clients (caisse) ───────────────── */
-				function navToClients(){
-					console.log('[nav] tentative → clients | url='+window.location.href);
-
-					/* ── Diagnostic : lister tous les <a href> trouvés ─────── */
-					var allLinks=document.querySelectorAll('a[href]');
-					console.log('[nav] <a href> count='+allLinks.length);
-					allLinks.forEach(function(el){
-						console.log('[nav] href='+el.getAttribute('href')+' label='+(el.getAttribute('aria-label')||''));
-					});
-
-					/* ── Méthode 1 : <a href> contenant customers ──────────── */
+				/* ── navToClients : 3 méthodes sûres ─────────────────── */
+				window.__navToClients=function(){
+					console.log('[nav] url='+window.location.href);
+					/* M1 : <a href> contenant 'customers' */
 					var found=false;
-					allLinks.forEach(function(el){
+					document.querySelectorAll('a[href]').forEach(function(a){
 						if(found)return;
-						if((el.getAttribute('href')||'').toLowerCase().indexOf('customers')!==-1){
-							el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-							found=true; console.log('[nav] M1 href click OK');
+						var h=(a.getAttribute('href')||'').toLowerCase();
+						if(h.indexOf('customers')!==-1){
+							console.log('[nav] M1 href='+h);
+							a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+							found=true;
 						}
 					});
 					if(found)return;
-
-					/* ── Méthode 2 : bouton/pressable avec aria-label client── */
-					var roles=document.querySelectorAll('[role="tab"],[role="button"],[role="link"]');
-					console.log('[nav] role elements count='+roles.length);
-					roles.forEach(function(el){
+					/* M2 : aria-label uniquement (pas textContent — trop risqué) */
+					document.querySelectorAll('[role="tab"],[role="button"],[role="link"]').forEach(function(el){
 						if(found)return;
-						var label=(el.getAttribute('aria-label')||el.textContent||'').toLowerCase();
+						var label=(el.getAttribute('aria-label')||'').toLowerCase();
 						if(label.indexOf('customer')!==-1||label.indexOf('client')!==-1){
+							console.log('[nav] M2 aria='+label);
 							el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-							found=true; console.log('[nav] M2 aria-label click: '+label);
+							found=true;
 						}
 					});
 					if(found)return;
-
-					/* ── Méthode 3 : cliquer le Nème bouton dans la sidebar ── */
-					/* Ordre WCPOS : 0=POS 1=Products 2=Orders 3=Customers 4=Reports */
-					var sidebarEl=null;
-					document.querySelectorAll('div,nav,aside').forEach(function(el){
-						var r=el.getBoundingClientRect();
-						if(r.left===0&&r.width>20&&r.width<120&&r.height>300&&!sidebarEl){
-							sidebarEl=el;
-						}
-					});
-					if(sidebarEl){
-						var btns=sidebarEl.querySelectorAll(
-							'[role="button"],[role="tab"],button,a,[tabindex="0"]'
-						);
-						console.log('[nav] sidebar buttons count='+btns.length);
-						/* Log chaque bouton pour diagnostic */
-						btns.forEach(function(b,i){
-							console.log('[nav] sidebar['+i+'] label='+(b.getAttribute('aria-label')||b.textContent||'').substring(0,30));
-						});
-						/* Customers = index 3 (après POS, Products, Orders) */
-						var idx=3;
-						if(btns[idx]){
-							btns[idx].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-							found=true; console.log('[nav] M3 sidebar['+idx+'] click OK');
-						}
-					}
-					if(found)return;
-
-					/* ── Méthode 4 : pushState URL — remplace le dernier segment ── */
+					/* M3 : réécriture URL + location.href (même origin → pas de rechargement) */
 					try{
 						var url=window.location.href;
 						var parsed=new URL(url);
 						var segs=parsed.pathname.replace(/\/+$/,'').split('/');
 						segs[segs.length-1]='customers';
-						var newPath=segs.join('/');
-						parsed.pathname=newPath;
-						var newUrl=parsed.toString();
-						if(newUrl!==url){
-							window.history.pushState({},'',newUrl);
-							window.dispatchEvent(new PopStateEvent('popstate',{state:{}}));
-							console.log('[nav] M4 pushState: '+newUrl);
-						}else{
-							console.warn('[nav] M4 URL inchangée: '+url);
-						}
-					}catch(e){ console.error('[nav] M4 erreur:',e.message); }
-				}
+						var newUrl=parsed.origin+segs.join('/');
+						console.log('[nav] M3 location.href='+newUrl);
+						if(newUrl!==url) window.location.href=newUrl;
+					}catch(e){console.error('[nav] M3',e.message);}
+				};
 
-				/* ── Overlay caisse fermée ────────────────────────────────────── */
+				/* ── Overlay caisse fermée ────────────────────────────── */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco'))return;
-					console.log('[overlay] show');
 					var ov=document.createElement('div');ov.id='wco';
 					ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
 						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
 						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
 					ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
-						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2>'
+						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse ferm\u00e9e</h2>'
 						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||'La caisse est fermée. Ouvrez-la avant de commencer.')+'</p>'
+						+(msg||'La caisse est ferm\u00e9e. Ouvrez-la avant de commencer.')+'</p>'
 						+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;'
-						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;'
-						+'cursor:pointer;letter-spacing:.3px">🔓 Ouvrir la caisse</button>';
+						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
+						+'\uD83D\uDD13 Ouvrir la caisse</button>';
 					document.body.appendChild(ov);
 					document.getElementById('wcb').addEventListener('click',function(){
-						console.log('[overlay] → caisse');
 						ov.remove();
-						navToClients();
+						window.__navToClients();
 					});
+					console.log('[overlay] show');
 				};
 				window.__hideOverlay=function(){
 					var ov=document.getElementById('wco');
-					if(ov){ ov.remove(); console.log('[overlay] hide'); }
+					if(ov){ov.remove();console.log('[overlay] hide');}
 				};
 
-				function hasPP(){
-					var w=document.getElementById('wpp');
-					return !!(w&&w.style.display!=='none'&&w.innerHTML.length>100);
-				}
-				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
-
-				/* Détecte l'onglet actuel depuis l'URL */
+				function hasPP(){var w=document.getElementById('wpp');return !!(w&&w.style.display!=='none'&&w.innerHTML.length>100);}
+				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
 				function currentTab(){
 					var u=window.location.href.toLowerCase();
 					var tabs=['products','orders','customers','reports'];
@@ -303,47 +223,33 @@ export const createWindow = (): void => {
 					return null;
 				}
 
-				/* Utilisateurs exemptés de l'overlay caisse fermée */
-				var EXEMPT_USERS=['ilyes','eddy','jjg','treso'];
+				var EXEMPT=${JSON.stringify(['ilyes','eddy','jjg','treso'])};
 
 				function chkCaisse(){
 					if(!inPOS())return;
 					var tab=currentTab();
-					/* Overlay uniquement sur l'onglet POS (products/orders).
-					   Sur customers : le panel caisse gère lui-même l'affichage.
-					   Sur reports : pas d'overlay. */
 					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
 					rp('/caisse/status',{},function(d){
-						if(!d||d.error){console.warn('[caisse] status err:',d&&d.error);return;}
-						var userLogin=(d.user_login||'').toLowerCase();
-						var isExempt=EXEMPT_USERS.indexOf(userLogin)!==-1;
-						console.log('[caisse] open='+d.open+' tab='+tab+' user='+userLogin+' exempt='+isExempt);
-						if(d.open||isExempt){
-							window.__hideOverlay();
-						}else if(isPosTab){
-							window.__showOverlay(d.message);
-						}
+						if(!d||d.error)return;
+						var login=(d.user_login||'').toLowerCase();
+						var exempt=EXEMPT.indexOf(login)!==-1;
+						console.log('[caisse] open='+d.open+' tab='+tab+' user='+login+' exempt='+exempt);
+						if(d.open||exempt){window.__hideOverlay();}
+						else if(isPosTab){window.__showOverlay(d.message);}
 					});
 				}
 
-				/* Action poller (caisse submit / nav) */
 				window._wcpos_action=null;
 				setInterval(function(){
 					if(!window._wcpos_action)return;
-					var a=window._wcpos_action; window._wcpos_action=null;
-					console.log('[action] type='+a.type);
+					var a=window._wcpos_action;window._wcpos_action=null;
 					var wpp=document.getElementById('wpp');
-					if(a.type==='nav'&&wpp){
-						window.__loadingPanel=false;
-						window.__loadPanel(wpp.getAttribute('data-pid'),wpp,a.view,true);
-					}
+					if(a.type==='nav'&&wpp){window.__loadingPanel=false;window.__loadPanel(wpp.getAttribute('data-pid'),wpp,a.view,true);}
 					if(a.type==='submit'){
 						var fd={};
-						if(a.data&&typeof a.data.entries==='function'){
-							for(var pair of a.data.entries()){fd[pair[0]]=pair[1];}
-						}else if(a.data&&typeof a.data==='object'){fd=Object.assign({},a.data);}
+						if(a.data&&typeof a.data.entries==='function'){for(var p of a.data.entries()){fd[p[0]]=p[1];}}
+						else if(a.data&&typeof a.data==='object'){fd=Object.assign({},a.data);}
 						rp('/caisse/submit',Object.assign({wcpos_caisse_action:a.action},fd),function(d){
-							console.log('[submit] reponse:',JSON.stringify(d));
 							window.__hideOverlay();
 							var wpp2=document.getElementById('wpp');
 							if(wpp2)window.__loadPanel(wpp2.getAttribute('data-pid'),wpp2,'dashboard',true);
@@ -352,31 +258,47 @@ export const createWindow = (): void => {
 					}
 				},200);
 
-				/* Check caisse au démarrage + toutes les 60s */
 				chkCaisse();
 				setInterval(chkCaisse,60000);
-
-				/* Surveille la fermeture du panel pour re-check caisse */
 				var _pws=false;
 				setInterval(function(){
 					if(!inPOS())return;
-					if(hasPP()){ window.__hideOverlay(); _pws=true; }
-					else if(_pws){ _pws=false; chkCaisse(); }
+					if(hasPP()){window.__hideOverlay();_pws=true;}
+					else if(_pws){_pws=false;chkCaisse();}
 				},1000);
 
+				/* Resize : retire #wpp pour forcer recalcul */
+				if(!window.__wcpos_resize){
+					window.__wcpos_resize=true;
+					var _rt=null;
+					window.addEventListener('resize',function(){
+						clearTimeout(_rt);
+						_rt=setTimeout(function(){
+							var w=document.getElementById('wpp');
+							if(w){w.remove();console.log('[resize] recalcul pid='+w.getAttribute('data-pid'));}
+						},400);
+					});
+				}
+
 				console.log('[setup] OK');
-			}catch(e){ console.error('[setup] EXCEPTION',e.message,e.stack); }
-		})();`;
-		mainWindow.webContents.executeJavaScript(js)
-			.catch((e: Error) => log.error('[setup] executeJS: '+e.message));
+			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
+		})();`).catch((e: Error) => log.error('[setup] '+e.message));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 3 — Injection panel pour un onglet donné
-	   Appelé depuis le main process à chaque changement d'URL détecté.
-	   findPanel() : filtre d'abord par texte (pas de reflow), puis cherche
-	   l'élément FEUILLE (aucun enfant ne contient aussi la signature) avant
-	   d'appeler getBoundingClientRect. O(N texte) + O(1 reflow) max.
+	   BLOC 3 — Injection panel pour un onglet donné.
+
+	   findPanel() — stratégie v4.5 :
+	   1. Passe texte : textContent.indexOf(sig) → pas de reflow
+	   2. Passe géométrie : getBoundingClientRect() sur les candidats textuels
+	      Filtres :
+	        min : width > 15% écran,  height > 5% écran
+	        max : width < 80% écran,  height < 65% écran  ← NOUVEAU v4.5
+	              x < 75% écran,      x > 0 (pas à bord gauche)
+	      Score : plus grand gagnant parmi les éléments de TAILLE RAISONNABLE.
+	      Le double filtre min/max exclut :
+	        - les éléments trop petits (leaf nodes, icônes)
+	        - les containers trop grands (toute la page, zone de contenu entière)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -384,7 +306,7 @@ export const createWindow = (): void => {
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
 				var w=document.getElementById('wpp');
-				if(w){ w.style.setProperty('display','none','important'); console.log('[panel] cache'); }
+				if(w){w.style.setProperty('display','none','important');console.log('[panel] cache tab=null');}
 			})();`).catch(() => {});
 			return;
 		}
@@ -396,139 +318,107 @@ export const createWindow = (): void => {
 			reports:   'bloquez les rapports',
 		};
 		const sig = PT[tab];
-		if (!sig) { log.warn(`[panel] onglet inconnu: ${tab}`); return; }
-		log.info(`[panel] injection tab=${tab}`);
+		if (!sig) return;
+		log.info(`[panel] → tab=${tab}`);
 
-		const js = `(function(){
+		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
-				var sig=${JSON.stringify(sig)};
-				console.log('[panel] run tab='+tab);
-
-				if(!document.querySelector('[data-testid="search-products"]')){
-					console.log('[panel] hors POS');
-					return;
-				}
-				if(!window.__setup){
-					console.log('[panel] setup absent, retry dans 500ms');
-					setTimeout(function(){
-						var e=new CustomEvent('wcpos-retry-panel',{detail:{tab:tab}});
-						document.dispatchEvent(e);
-					},500);
-					return;
-				}
+				var sig=${JSON.stringify(sig)}.toLowerCase();
+				if(!document.querySelector('[data-testid="search-products"]')){console.log('[panel] hors POS');return;}
+				if(!window.__setup){console.log('[panel] setup absent');return;}
 
 				var wpp=document.getElementById('wpp');
 
-				/* Panel déjà chargé pour cet onglet → ré-afficher */
+				/* Panel déjà chargé pour cet onglet → ré-afficher uniquement */
 				if(wpp&&wpp.getAttribute('data-pid')===tab&&wpp.innerHTML.length>100){
 					wpp.style.removeProperty('display');
 					console.log('[panel] re-affiche tab='+tab);
 					return;
 				}
 
-				/* findPanel — texte d'abord (pas de reflow), puis géométrie.
-				   Le filtre "feuille" a été retiré en v4.4 : il était trop agressif
-				   et rejetait le bon container WCPOS quand l'upsell est structuré
-				   <div><p>le texte</p></div> (div rejeté car enfant contient le texte,
-				   <p> trop petit → best=null → panel jamais affiché).
-				   findPanel() n'est appelé qu'une fois par changement d'onglet
-				   (pas de MO) donc la perf n'est pas un problème. */
+				/* ── findPanel ──────────────────────────────────────────────
+				   Passe 1 : texte  (pas de reflow — filtre les ancêtres aussi)
+				   Passe 2 : géométrie sur les éléments textuels
+				   Double filtre min+max : exclut éléments trop petits ET trop grands.
+				   Plus grand score parmi les éléments de taille raisonnable.      */
 				var W=window.innerWidth, H=window.innerHeight;
-				var sigLow=sig.toLowerCase();
-				var best=null, bestScore=0;
-				var checked=0;
+				var best=null, bestScore=0, checked=0;
 
 				document.querySelectorAll('div,section,aside').forEach(function(el){
 					if(el.id==='wpp')return;
-					/* Passe 1 : texte (pas de reflow) */
-					if((el.textContent||'').toLowerCase().indexOf(sigLow)===-1)return;
+					if((el.textContent||'').toLowerCase().indexOf(sig)===-1)return;
 					checked++;
-					/* Passe 2 : géométrie (reflow seulement sur les candidats textuels) */
 					var r=el.getBoundingClientRect();
-					if(r.width<W*0.15||r.height<H*0.05)return;
-					if(r.x===0&&r.width>W*0.85)return;
-					if(r.x>W*0.75||r.width<W*0.20)return;
+
+					/* Filtres MIN — trop petit */
+					if(r.width  < W*0.15)return;
+					if(r.height < H*0.05)return;
+
+					/* Filtres MAX — trop grand (container global, zone de contenu entière) */
+					if(r.width  > W*0.80)return;
+					if(r.height > H*0.65)return;
+
+					/* Filtres POSITION */
+					if(r.x < 0 || r.x > W*0.60)return;
+
 					var score=r.width*r.height;
-					/* Garder le plus GRAND conteneur valide (couvre mieux la zone upsell) */
 					if(score>bestScore){
 						bestScore=score;
 						best={el:el,r:r};
-						console.log('[panel] candidat '+checked+' score='+Math.round(score)
-							+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));
+						console.log('[panel] candidat tab='+tab+' score='+Math.round(score)
+							+' x='+Math.round(r.x)+' y='+Math.round(r.top)
+							+' w='+Math.round(r.width)+' h='+Math.round(r.height));
 					}
 				});
 
+				console.log('[panel] checked='+checked+' found='+(best?'OUI':'NON')+' tab='+tab);
+
 				if(!best){
-					console.log('[panel] upsell introuvable pour tab='+tab+' (verifie '+checked+' elems)');
 					if(wpp)wpp.style.setProperty('display','none','important');
 					return;
 				}
 
-				console.log('[panel] upsell OK tab='+tab
-					+' top='+Math.round(best.r.top)+' left='+Math.round(best.r.left)
-					+' w='+Math.round(best.r.width)+' h='+Math.round(best.r.height));
+				/* ── Calcul position #wpp ───────────────────────────────────
+				   navLeft   : bord droit de la sidebar (barre d'icônes gauche)
+				   hdrBottom : bas du header WCPOS (max de tous les éléments fixes en haut) */
+				var navLeft=(function(){
+					var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
+					         '[class*="sidebar"]','nav[class]'];
+					for(var i=0;i<sel.length;i++){
+						var e2=document.querySelector(sel[i]);
+						if(e2){var r2=e2.getBoundingClientRect();
+							if(r2.left===0&&r2.width>0&&r2.width<W*0.15)return Math.round(r2.right);}
+					}
+					return best.r.left<W*0.30?Math.round(best.r.left):55;
+				})();
+
+				var hdrBottom=(function(){
+					var maxB=0;
+					var q='header,nav,[role="banner"],[role="navigation"],'
+						+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
+						+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]';
+					document.querySelectorAll(q).forEach(function(e3){
+						var r3=e3.getBoundingClientRect();
+						if(r3.top<=5&&r3.width>W*0.5&&r3.height>10&&r3.height<200)
+							if(Math.round(r3.bottom)>maxB)maxB=Math.round(r3.bottom);
+					});
+					return maxB>0?maxB:50;
+				})();
+
+				console.log('[panel] navLeft='+navLeft+' hdrBottom='+hdrBottom);
 
 				if(wpp)wpp.remove();
-
-				/* Trouver le bord droit de la sidebar WCPOS (barre d'icônes à gauche).
-				   On cherche le premier élément nav/sidebar visuel, ou on prend best.r.left
-				   si c'est raisonnable (< 30% écran), sinon on part du bord gauche + 55px. */
-				var navLeft = (function(){
-					var selectors = [
-						'[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
-						'[class*="sidebar"]','[class*="nav-bar"]','nav[class]'
-					];
-					for(var i=0;i<selectors.length;i++){
-						var el=document.querySelector(selectors[i]);
-						if(el){
-							var r2=el.getBoundingClientRect();
-							/* Valide uniquement si c'est une barre étroite sur le côté gauche */
-							if(r2.left===0 && r2.width>0 && r2.width<W*0.15){
-								return Math.round(r2.right);
-							}
-						}
-					}
-					/* Fallback : si best.r.left < 30% écran, l'utiliser, sinon 55px */
-					return best.r.left < W*0.30 ? Math.round(best.r.left) : 55;
-				})();
-
-				/* Détecter le bas de la ZONE DE HEADER complète.
-				   WCPOS peut avoir plusieurs couches (app bar + navigation bar).
-				   On scanne TOUS les candidats et on prend le bottom maximum. */
-				var headerBottom = (function(){
-					var maxB = 0;
-					var tags = 'header,nav,[role="banner"],[role="navigation"],'
-						+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
-						+'[class*="Toolbar"],[class*="toolbar"],[class*="header"],'
-						+'[class*="topbar"],[class*="app-bar"],[class*="NavBar"]';
-					document.querySelectorAll(tags).forEach(function(el){
-						var r3=el.getBoundingClientRect();
-						/* Valide : collé en haut (top ≤ 5px), largeur > 50% écran,
-						   hauteur entre 10px et 200px */
-						if(r3.top<=5 && r3.width>W*0.5 && r3.height>10 && r3.height<200){
-							if(Math.round(r3.bottom)>maxB) maxB=Math.round(r3.bottom);
-						}
-					});
-					return maxB>0 ? maxB : 50;
-				})();
-
-				console.log('[panel] navLeft='+navLeft+' headerBottom='+headerBottom+' best.r.left='+Math.round(best.r.left)+' best.r.top='+Math.round(best.r.top));
-
 				var w=document.createElement('div');
-				w.id='wpp'; w.setAttribute('data-pid',tab);
+				w.id='wpp';w.setAttribute('data-pid',tab);
 				w.style.cssText='position:fixed'
-					+';top:'+headerBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
+					+';top:'+hdrBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
 					+';z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
 				document.body.appendChild(w);
 				best.el.style.setProperty('visibility','hidden','important');
-				best.el.setAttribute('data-wcpos-off','1');
-
 				window.__loadPanel(tab,w,null,true);
-			}catch(e){ console.error('[panel] EXCEPTION',e.message,e.stack); }
-		})();`;
-		mainWindow.webContents.executeJavaScript(js)
-			.catch((e: Error) => log.error(`[panel] executeJS: ${e.message}`));
+			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
+		})();`).catch((e: Error) => log.error(`[panel] executeJS: ${e.message}`));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
@@ -540,12 +430,11 @@ export const createWindow = (): void => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const currentUrl = url ?? mainWindow.webContents.getURL();
 		const tab = tabFromUrl(currentUrl);
-		log.info(`[${label}] url=${currentUrl} → tab=${tab}`);
+		log.info(`[${label}] url=${currentUrl} tab=${tab}`);
 		runAntiPro();
 		runSetup();
 		if (tab !== lastTab) {
 			lastTab = tab;
-			/* Délai 400ms : laisse React finir le render avant findPanel */
 			setTimeout(() => runPanelForTab(tab), 400);
 		}
 	}
@@ -554,24 +443,14 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 		log.info('[dom-ready]');
 		onNavigate('dom-ready');
-		/* Injecte un listener resize dans le renderer pour recalculer le panel
-		   quand la fenêtre est redimensionnée (v3.9) */
 		setTimeout(() => {
 			mainWindow?.webContents.executeJavaScript(`(function(){
-				if(window.__wcpos_resize)return;
-				window.__wcpos_resize=true;
-				var resizeTimer=null;
-				window.addEventListener('resize',function(){
-					clearTimeout(resizeTimer);
-					resizeTimer=setTimeout(function(){
-						var wpp=document.getElementById('wpp');
-						if(wpp){
-							/* Retire le panel — le main process re-injecte via did-navigate-in-page
-							   OU via le console.log('[resize]...) capturé par console-message */
-							wpp.remove();
-							console.log('[resize] recalcul pid='+wpp.getAttribute('data-pid'));
-						}
-					},300);
+				if(window.__wcpos_resize)return;window.__wcpos_resize=true;
+				var t=null;window.addEventListener('resize',function(){
+					clearTimeout(t);t=setTimeout(function(){
+						var w=document.getElementById('wpp');
+						if(w){w.remove();console.log('[resize] recalcul pid='+w.getAttribute('data-pid'));}
+					},400);
 				});
 			})();`).catch(()=>{});
 		}, 2000);
@@ -586,15 +465,13 @@ export const createWindow = (): void => {
 		onNavigate('did-navigate-in-page', url);
 	});
 
-	/* Poll court (10 × 2s) pour le chargement initial du POS */
 	let pollCount = 0;
 	const pollTimer = setInterval(() => {
 		if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(pollTimer); return; }
 		const url = mainWindow.webContents.getURL();
 		const tab = tabFromUrl(url);
 		log.info(`[poll ${pollCount+1}/10] url=${url} tab=${tab}`);
-		runAntiPro();
-		runSetup();
+		runAntiPro(); runSetup();
 		if (tab && tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 		if (++pollCount >= 10) clearInterval(pollTimer);
 	}, 2000);
@@ -604,13 +481,11 @@ export const createWindow = (): void => {
 		if (process.env.START_MINIMIZED) mainWindow.minimize(); else mainWindow.show();
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
-	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-		shell.openExternal(url); return { action: 'deny' };
-	});
+	mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 
 	let retryCount = 0;
 	mainWindow.webContents.on('did-fail-load', async (_e, _code, desc) => {
-		log.error(`[did-fail-load] desc=${desc}`);
+		log.error(`[did-fail-load] ${desc}`);
 		if (desc === 'ERR_CONNECTION_REFUSED') {
 			if (retryCount >= 30) return;
 			retryCount++;
