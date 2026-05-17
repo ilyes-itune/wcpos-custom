@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.1';
+const APP_VERSION  = 'WCPOS Custom 4.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -143,7 +143,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v4.1');
+				console.log('[setup] debut v4.2');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -245,6 +245,9 @@ export const createWindow = (): void => {
 					return null;
 				}
 
+				/* Utilisateurs exemptés de l'overlay caisse fermée */
+				var EXEMPT_USERS=['ilyes','eddy','jjg','treso'];
+
 				function chkCaisse(){
 					if(!inPOS())return;
 					var tab=currentTab();
@@ -254,8 +257,10 @@ export const createWindow = (): void => {
 					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error){console.warn('[caisse] status err:',d&&d.error);return;}
-						console.log('[caisse] open='+d.open+' tab='+tab);
-						if(d.open){
+						var userLogin=(d.user_login||'').toLowerCase();
+						var isExempt=EXEMPT_USERS.indexOf(userLogin)!==-1;
+						console.log('[caisse] open='+d.open+' tab='+tab+' user='+userLogin+' exempt='+isExempt);
+						if(d.open||isExempt){
 							window.__hideOverlay();
 						}else if(isPosTab){
 							window.__showOverlay(d.message);
