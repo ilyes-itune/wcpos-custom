@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.6';
+const APP_VERSION  = 'WCPOS Custom 4.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -51,6 +51,25 @@ export const createWindow = (): void => {
 		if (message.startsWith('[resize] recalcul pid=')) {
 			const pid = message.replace('[resize] recalcul pid=', '').trim();
 			setTimeout(() => runPanelForTab(pid || lastTab), 400);
+		}
+		/* Navigation demandée par le renderer (overlay bouton caisse) :
+		   le renderer ne peut pas naviguer fiablement dans React Navigation,
+		   donc il signale ici et le main process fait loadURL() directement. */
+		if (message.startsWith('[wcpos-nav-to] ')) {
+			const target = message.replace('[wcpos-nav-to] ', '').trim();
+			log.info(`[nav-to] demande → ${target}`);
+			if (!mainWindow || mainWindow.isDestroyed()) return;
+			try {
+				const cur = mainWindow.webContents.getURL();
+				const parsed = new URL(cur);
+				const segs = parsed.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+				if (segs.length > 0) segs[segs.length - 1] = target;
+				else segs.push(target);
+				const newUrl = parsed.origin + '/' + segs.join('/');
+				log.info(`[nav-to] ${cur} → ${newUrl}`);
+				lastTab = null; /* force re-injection panel après navigation */
+				mainWindow.webContents.loadURL(newUrl);
+			} catch (e) { log.error(`[nav-to] ${e}`); }
 		}
 	});
 	mainWindow.webContents.on('render-process-gone', (_e, d) =>
@@ -90,7 +109,7 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub : CSS statique, une seule injection.
+	   BLOC 1 — Anti-pub
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -111,16 +130,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse/overlay.
-	   Base exacte v4.1 + exempt users (v4.2) + navToClients corrigé (v4.5).
-
-	   navToClients — 2 méthodes sûres SANS toucher au DOM React :
-	     M1 : cherche <a href="...customers..."> et le clique
-	     M2 : réécrit window.location.href (même origin → React Navigation
-	          intercepte la navigation sans rechargement de page)
-	   Supprimé par rapport à v4.3 :
-	     - M2 aria-label avec textContent (cliquait des boutons dans #wpp)
-	     - M3 sidebar click par index (cliquait le mauvais onglet)
+	   BLOC 2 — Setup caisse / overlay
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -131,7 +141,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.5');
+				console.log('[setup] v4.2');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -159,39 +169,12 @@ export const createWindow = (): void => {
 					});
 				};
 
-				/* ── navToClients — v4.5 ─────────────────────────────────
-				   M1 : <a href> contenant "customers" → clic direct
-				   M2 : window.location.href = URL avec dernier segment = customers
-				        Même origin → React Navigation gère sans rechargement.
-				   Pas de querySelectorAll('[role=button]') + textContent
-				   (risque de cliquer des éléments dans #wpp ou le panel caisse). */
-				window.__navToClients=function(){
-					console.log('[nav] url='+window.location.href);
-					/* M1 */
-					var found=false;
-					document.querySelectorAll('a[href]').forEach(function(a){
-						if(found)return;
-						if((a.getAttribute('href')||'').toLowerCase().indexOf('customers')!==-1){
-							console.log('[nav] M1 href='+a.getAttribute('href'));
-							a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-							found=true;
-						}
-					});
-					if(found)return;
-					/* M2 : réécriture URL propre */
-					try{
-						var parsed=new URL(window.location.href);
-						var segs=parsed.pathname.replace(/\/+$/,'').split('/').filter(Boolean);
-						/* Remplace le dernier segment par "customers" */
-						if(segs.length>0) segs[segs.length-1]='customers';
-						else segs.push('customers');
-						var newUrl=parsed.origin+'/'+segs.join('/');
-						console.log('[nav] M2 location.href='+newUrl);
-						window.location.href=newUrl;
-					}catch(e){console.error('[nav] M2',e.message);}
-				};
+				function navToClients(){
+					/* Signale au main process de faire loadURL() — plus fiable
+					   que toute manipulation DOM/React depuis le renderer. */
+					console.log('[wcpos-nav-to] customers');
+				}
 
-				/* ── Overlay caisse fermée ───────────────────────────────── */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco'))return;
 					var ov=document.createElement('div');ov.id='wco';
@@ -207,8 +190,7 @@ export const createWindow = (): void => {
 						+'\uD83D\uDD13 Ouvrir la caisse</button>';
 					document.body.appendChild(ov);
 					document.getElementById('wcb').addEventListener('click',function(){
-						ov.remove();
-						window.__navToClients();
+						ov.remove(); navToClients();
 					});
 					console.log('[overlay] show');
 				};
@@ -229,19 +211,14 @@ export const createWindow = (): void => {
 					return null;
 				}
 
-				/* Utilisateurs exemptés de l'overlay caisse fermée */
-				var EXEMPT=${JSON.stringify(['ilyes','eddy','jjg','treso'])};
-
 				function chkCaisse(){
 					if(!inPOS())return;
 					var tab=currentTab();
 					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error)return;
-						var login=(d.user_login||'').toLowerCase();
-						var exempt=EXEMPT.indexOf(login)!==-1;
-						console.log('[caisse] open='+d.open+' tab='+tab+' user='+login+' exempt='+exempt);
-						if(d.open||exempt){window.__hideOverlay();}
+						console.log('[caisse] open='+d.open+' tab='+tab);
+						if(d.open){window.__hideOverlay();}
 						else if(isPosTab){window.__showOverlay(d.message);}
 					});
 				}
@@ -278,7 +255,6 @@ export const createWindow = (): void => {
 					else if(_pws){_pws=false;chkCaisse();}
 				},1000);
 
-				/* Resize */
 				if(!window.__wcpos_resize){
 					window.__wcpos_resize=true;
 					var _rt=null;
@@ -297,15 +273,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 3 — Injection panel.
-
-	   findPanel() — identique à v4.1 (base stable confirmée) :
-	   - Passe 1 : textContent match, pas de reflow
-	   - Filtre feuille : rejette un élément si un de ses enfants DIRECTS
-	     contient aussi la signature → on garde l'élément le plus proche
-	     du texte sans remonter dans tous les ancêtres
-	   - Passe 2 : getBoundingClientRect sur les feuilles candidates
-	   - Plus grand score gagnant
+	   BLOC 3 — Panel
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -338,8 +306,6 @@ export const createWindow = (): void => {
 				if(!window.__setup){console.log('[panel] setup absent'); return;}
 
 				var wpp=document.getElementById('wpp');
-
-				/* Panel déjà chargé → ré-afficher */
 				if(wpp&&wpp.getAttribute('data-pid')===tab&&wpp.innerHTML.length>100){
 					wpp.style.removeProperty('display');
 					console.log('[panel] re-affiche tab='+tab);
@@ -351,12 +317,7 @@ export const createWindow = (): void => {
 
 				document.querySelectorAll('div,section,aside').forEach(function(el){
 					if(el.id==='wpp')return;
-					/* Passe 1 : texte, pas de reflow */
 					if((el.textContent||'').toLowerCase().indexOf(sig)===-1)return;
-					/* Filtre feuille (identique v4.1) :
-					   rejette si un enfant DIRECT contient aussi la signature.
-					   Évite de remonter dans les ancêtres trop larges
-					   tout en gardant le container upsell direct. */
 					var childHas=false;
 					for(var i=0;i<el.children.length;i++){
 						if((el.children[i].textContent||'').toLowerCase().indexOf(sig)!==-1){
@@ -365,7 +326,6 @@ export const createWindow = (): void => {
 					}
 					if(childHas)return;
 					checked++;
-					/* Passe 2 : géométrie sur les feuilles candidates */
 					var r=el.getBoundingClientRect();
 					if(r.width<W*0.15||r.height<H*0.05)return;
 					if(r.x===0&&r.width>W*0.85)return;
@@ -373,7 +333,7 @@ export const createWindow = (): void => {
 					var score=r.width*r.height;
 					if(score>bestScore){
 						bestScore=score; best={el:el,r:r};
-						console.log('[panel] candidat tab='+tab+' score='+Math.round(score)
+						console.log('[panel] candidat tab='+tab
 							+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));
 					}
 				});
@@ -385,7 +345,6 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				/* Position #wpp */
 				var navLeft=(function(){
 					var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
 					         '[class*="sidebar"]','nav[class]'];
