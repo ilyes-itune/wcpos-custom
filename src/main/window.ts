@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.0';
+const APP_VERSION  = 'WCPOS Custom 4.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -143,7 +143,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v3.9');
+				console.log('[setup] debut v4.1');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -181,6 +181,30 @@ export const createWindow = (): void => {
 					});
 				};
 
+				/* ── Navigation vers l'onglet clients (caisse) ───────────────── */
+				function navToClients(){
+					console.log('[nav] → clients');
+					/* Méthode 1 : cliquer le lien nav WCPOS dont le href contient 'customers' */
+					var found=false;
+					document.querySelectorAll('a[href]').forEach(function(el){
+						if(found)return;
+						if((el.getAttribute('href')||'').indexOf('customers')!==-1){
+							el.click(); found=true;
+							console.log('[nav] click href customers OK');
+						}
+					});
+					if(found)return;
+					/* Méthode 2 : pushState sur l'URL courante */
+					var url=window.location.href;
+					var newUrl=url.replace(/(products|orders|reports)/, 'customers');
+					if(newUrl!==url){
+						window.history.pushState({},'',newUrl);
+						window.dispatchEvent(new PopStateEvent('popstate',{state:{}}));
+						console.log('[nav] pushState customers OK: '+newUrl);
+					}
+				}
+
+				/* ── Overlay caisse fermée ────────────────────────────────────── */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco'))return;
 					console.log('[overlay] show');
@@ -189,23 +213,22 @@ export const createWindow = (): void => {
 						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
 						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
 					ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
-						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermee</h2>'
+						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2>'
 						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||'La caisse est fermee.')+'</p>'
+						+(msg||'La caisse est fermée. Ouvrez-la avant de commencer.')+'</p>'
 						+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;'
-						+'padding:10px 22px;border-radius:6px;font-size:.95em;cursor:pointer">OK, compris</button>';
+						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;'
+						+'cursor:pointer;letter-spacing:.3px">🔓 Ouvrir la caisse</button>';
 					document.body.appendChild(ov);
 					document.getElementById('wcb').addEventListener('click',function(){
-						console.log('[overlay] ferme par user');
+						console.log('[overlay] → caisse');
 						ov.remove();
+						navToClients();
 					});
 				};
 				window.__hideOverlay=function(){
 					var ov=document.getElementById('wco');
-					if(ov&&ov.style.display!=='none'){
-						console.log('[overlay] hide');
-						ov.style.setProperty('display','none','important');
-					}
+					if(ov){ ov.remove(); console.log('[overlay] hide'); }
 				};
 
 				function hasPP(){
@@ -214,12 +237,29 @@ export const createWindow = (): void => {
 				}
 				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
 
+				/* Détecte l'onglet actuel depuis l'URL */
+				function currentTab(){
+					var u=window.location.href.toLowerCase();
+					var tabs=['products','orders','customers','reports'];
+					for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];}
+					return null;
+				}
+
 				function chkCaisse(){
 					if(!inPOS())return;
+					var tab=currentTab();
+					/* Overlay uniquement sur l'onglet POS (products/orders).
+					   Sur customers : le panel caisse gère lui-même l'affichage.
+					   Sur reports : pas d'overlay. */
+					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
 					rp('/caisse/status',{},function(d){
-						if(!d||d.error)return;
-						if(d.open){ window.__hideOverlay(); }
-						else if(!hasPP()){ window.__showOverlay(d.message); }
+						if(!d||d.error){console.warn('[caisse] status err:',d&&d.error);return;}
+						console.log('[caisse] open='+d.open+' tab='+tab);
+						if(d.open){
+							window.__hideOverlay();
+						}else if(isPosTab){
+							window.__showOverlay(d.message);
+						}
 					});
 				}
 
