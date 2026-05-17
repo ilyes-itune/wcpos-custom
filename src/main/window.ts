@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.9';
+const APP_VERSION  = 'WCPOS Custom 4.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -386,26 +386,24 @@ export const createWindow = (): void => {
 					return best.r.left < W*0.30 ? Math.round(best.r.left) : 55;
 				})();
 
-				/* Détecter le bas du header WCPOS (barre titre en haut pleine largeur).
-				   Sans ça, le panel démarre à la hauteur de l'upsell (~300px) au lieu
-				   du bord haut de la zone de contenu. */
+				/* Détecter le bas de la ZONE DE HEADER complète.
+				   WCPOS peut avoir plusieurs couches (app bar + navigation bar).
+				   On scanne TOUS les candidats et on prend le bottom maximum. */
 				var headerBottom = (function(){
-					var selectors = [
-						'[class*="Header"]','[class*="TopBar"]','[class*="AppBar"]',
-						'[class*="header"]','[class*="topbar"]','[class*="app-bar"]'
-					];
-					for(var i=0;i<selectors.length;i++){
-						var el=document.querySelector(selectors[i]);
-						if(el){
-							var r3=el.getBoundingClientRect();
-							/* Valide si : collé en haut, pleine largeur, hauteur raisonnable */
-							if(r3.top<=2 && r3.width>W*0.5 && r3.height>20 && r3.height<150){
-								return Math.round(r3.bottom);
-							}
+					var maxB = 0;
+					var tags = 'header,nav,[role="banner"],[role="navigation"],'
+						+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
+						+'[class*="Toolbar"],[class*="toolbar"],[class*="header"],'
+						+'[class*="topbar"],[class*="app-bar"],[class*="NavBar"]';
+					document.querySelectorAll(tags).forEach(function(el){
+						var r3=el.getBoundingClientRect();
+						/* Valide : collé en haut (top ≤ 5px), largeur > 50% écran,
+						   hauteur entre 10px et 200px */
+						if(r3.top<=5 && r3.width>W*0.5 && r3.height>10 && r3.height<200){
+							if(Math.round(r3.bottom)>maxB) maxB=Math.round(r3.bottom);
 						}
-					}
-					/* Fallback : hauteur header WCPOS ~50px */
-					return 50;
+					});
+					return maxB>0 ? maxB : 50;
 				})();
 
 				console.log('[panel] navLeft='+navLeft+' headerBottom='+headerBottom+' best.r.left='+Math.round(best.r.left)+' best.r.top='+Math.round(best.r.top));
@@ -414,7 +412,7 @@ export const createWindow = (): void => {
 				w.id='wpp'; w.setAttribute('data-pid',tab);
 				w.style.cssText='position:fixed'
 					+';top:'+headerBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
-					+';z-index:500;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
+					+';z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
 				document.body.appendChild(w);
 				best.el.style.setProperty('visibility','hidden','important');
 				best.el.setAttribute('data-wcpos-off','1');
