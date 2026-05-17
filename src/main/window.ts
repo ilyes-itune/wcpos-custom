@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.7';
+const APP_VERSION  = 'WCPOS Custom 3.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -136,7 +136,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v3.5');
+				console.log('[setup] debut v3.7');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -356,10 +356,35 @@ export const createWindow = (): void => {
 					+' w='+Math.round(best.r.width)+' h='+Math.round(best.r.height));
 
 				if(wpp)wpp.remove();
+
+				/* Trouver le bord droit de la sidebar WCPOS (barre d'icônes à gauche).
+				   On cherche le premier élément nav/sidebar visuel, ou on prend best.r.left
+				   si c'est raisonnable (< 30% écran), sinon on part du bord gauche + 55px. */
+				var navLeft = (function(){
+					var selectors = [
+						'[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
+						'[class*="sidebar"]','[class*="nav-bar"]','nav[class]'
+					];
+					for(var i=0;i<selectors.length;i++){
+						var el=document.querySelector(selectors[i]);
+						if(el){
+							var r2=el.getBoundingClientRect();
+							/* Valide uniquement si c'est une barre étroite sur le côté gauche */
+							if(r2.left===0 && r2.width>0 && r2.width<W*0.15){
+								return Math.round(r2.right);
+							}
+						}
+					}
+					/* Fallback : si best.r.left < 30% écran, l'utiliser, sinon 55px */
+					return best.r.left < W*0.30 ? Math.round(best.r.left) : 55;
+				})();
+
+				console.log('[panel] navLeft='+navLeft+' best.r.left='+Math.round(best.r.left));
+
 				var w=document.createElement('div');
 				w.id='wpp'; w.setAttribute('data-pid',tab);
 				w.style.cssText='position:fixed'
-					+';top:'+best.r.top+'px;left:'+best.r.left+'px;right:0;bottom:0'
+					+';top:'+best.r.top+'px;left:'+navLeft+'px;right:0;bottom:0'
 					+';z-index:500;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
 				document.body.appendChild(w);
 				best.el.style.setProperty('visibility','hidden','important');
