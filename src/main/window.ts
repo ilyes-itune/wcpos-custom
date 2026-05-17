@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.8';
+const APP_VERSION  = 'WCPOS Custom 3.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -56,6 +56,13 @@ export const createWindow = (): void => {
 		if      (level === 3) log.error(`${tag} ${message}`);
 		else if (level === 2) log.warn (`${tag} ${message}`);
 		else                  log.info (`${tag} ${message}`);
+		/* Recalcul du panel après resize : le renderer log '[resize] recalcul pid=...'
+		   → on récupère le pid et on re-injecte le panel (v3.9) */
+		if (message.startsWith('[resize] recalcul pid=')) {
+			const pid = message.replace('[resize] recalcul pid=', '').trim();
+			log.info(`[resize] re-injection pour tab=${pid}`);
+			setTimeout(() => runPanelForTab(pid || lastTab), 400);
+		}
 	});
 
 	/* Santé renderer */
@@ -136,7 +143,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v3.7');
+				console.log('[setup] debut v3.9');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -379,12 +386,34 @@ export const createWindow = (): void => {
 					return best.r.left < W*0.30 ? Math.round(best.r.left) : 55;
 				})();
 
-				console.log('[panel] navLeft='+navLeft+' best.r.left='+Math.round(best.r.left));
+				/* Détecter le bas du header WCPOS (barre titre en haut pleine largeur).
+				   Sans ça, le panel démarre à la hauteur de l'upsell (~300px) au lieu
+				   du bord haut de la zone de contenu. */
+				var headerBottom = (function(){
+					var selectors = [
+						'[class*="Header"]','[class*="TopBar"]','[class*="AppBar"]',
+						'[class*="header"]','[class*="topbar"]','[class*="app-bar"]'
+					];
+					for(var i=0;i<selectors.length;i++){
+						var el=document.querySelector(selectors[i]);
+						if(el){
+							var r3=el.getBoundingClientRect();
+							/* Valide si : collé en haut, pleine largeur, hauteur raisonnable */
+							if(r3.top<=2 && r3.width>W*0.5 && r3.height>20 && r3.height<150){
+								return Math.round(r3.bottom);
+							}
+						}
+					}
+					/* Fallback : hauteur header WCPOS ~50px */
+					return 50;
+				})();
+
+				console.log('[panel] navLeft='+navLeft+' headerBottom='+headerBottom+' best.r.left='+Math.round(best.r.left)+' best.r.top='+Math.round(best.r.top));
 
 				var w=document.createElement('div');
 				w.id='wpp'; w.setAttribute('data-pid',tab);
 				w.style.cssText='position:fixed'
-					+';top:'+best.r.top+'px;left:'+navLeft+'px;right:0;bottom:0'
+					+';top:'+headerBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
 					+';z-index:500;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
 				document.body.appendChild(w);
 				best.el.style.setProperty('visibility','hidden','important');
@@ -420,6 +449,27 @@ export const createWindow = (): void => {
 		mainWindow?.setTitle(APP_VERSION);
 		log.info('[dom-ready]');
 		onNavigate('dom-ready');
+		/* Injecte un listener resize dans le renderer pour recalculer le panel
+		   quand la fenêtre est redimensionnée (v3.9) */
+		setTimeout(() => {
+			mainWindow?.webContents.executeJavaScript(`(function(){
+				if(window.__wcpos_resize)return;
+				window.__wcpos_resize=true;
+				var resizeTimer=null;
+				window.addEventListener('resize',function(){
+					clearTimeout(resizeTimer);
+					resizeTimer=setTimeout(function(){
+						var wpp=document.getElementById('wpp');
+						if(wpp){
+							/* Retire le panel — le main process re-injecte via did-navigate-in-page
+							   OU via le console.log('[resize]...) capturé par console-message */
+							wpp.remove();
+							console.log('[resize] recalcul pid='+wpp.getAttribute('data-pid'));
+						}
+					},300);
+				});
+			})();`).catch(()=>{});
+		}, 2000);
 	});
 	mainWindow.webContents.on('did-navigate', (_e, url) => {
 		log.info(`[did-navigate] ${url}`);
