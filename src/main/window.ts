@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 3.4';
+const APP_VERSION  = 'WCPOS Custom 3.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -169,29 +169,39 @@ export const createWindow = (): void => {
 				});
 			}
 
+			/* findPanel — optimisé : textContent d'abord (pas de reflow),
+			   getBoundingClientRect uniquement sur les candidats textuels         */
+			var fpRunning=false;
 			function findPanel(){
+				if(fpRunning)return null;
+				fpRunning=true;
 				var W=window.innerWidth,H=window.innerHeight,best=null,bestScore=0;
+				/* Passe 1 : filtre par texte sans forcer le reflow */
+				var cands=[];
 				document.querySelectorAll('div,section,aside').forEach(function(el){
-					var r=el.getBoundingClientRect();
-					if(r.width<W*0.15||r.height<H*0.05)return;
-					if(r.x===0&&r.width>W*0.85)return;
-					if(r.x>W*0.75||r.width<W*0.20)return;
 					if(el.id==='wpp')return;
 					var txt=(el.textContent||'').toLowerCase();
 					for(var pid in PT){
-						if(txt.indexOf(PT[pid])!==-1){
-							var score=r.width*r.height;
-							if(score>bestScore){bestScore=score;best={el:el,pid:pid,r:r};}
-						}
+						if(txt.indexOf(PT[pid])!==-1){cands.push({el:el,pid:pid});break;}
 					}
 				});
+				/* Passe 2 : getBoundingClientRect uniquement sur les ~3-5 candidats */
+				cands.forEach(function(c){
+					var r=c.el.getBoundingClientRect();
+					if(r.width<W*0.15||r.height<H*0.05)return;
+					if(r.x===0&&r.width>W*0.85)return;
+					if(r.x>W*0.75||r.width<W*0.20)return;
+					var score=r.width*r.height;
+					if(score>bestScore){bestScore=score;best={el:c.el,pid:c.pid,r:r};}
+				});
+				fpRunning=false;
 				return best;
 			}
 
 			var injecting=false,cPid=null,cWrap=null;
 
 			function injectPanel(){
-				if(injecting||loadingPanel)return;
+				if(injecting||loadingPanel||fpRunning)return;
 				if(!document.querySelector('[data-testid="search-products"]'))return;
 
 				var wpp=document.getElementById('wpp');
@@ -200,6 +210,8 @@ export const createWindow = (): void => {
 				/* Mauvais onglet — cacher le panel sans le supprimer */
 				if(!found){
 					if(wpp)wpp.style.setProperty('display','none','important');
+					/* Si panel caché, surveiller la nav avec obs léger */
+					mo.observe(document.body,moLite);
 					return;
 				}
 
@@ -209,6 +221,9 @@ export const createWindow = (): void => {
 				if(wpp&&wpp.getAttribute('data-pid')===pid&&wpp.innerHTML.length>100){
 					wpp.style.removeProperty('display');
 					el.style.setProperty('visibility','hidden','important');
+					/* Panel stable : passer en obs très léger (childList only, pas subtree) */
+					mo.disconnect();
+					mo.observe(document.body,moLite);
 					return;
 				}
 
@@ -219,19 +234,20 @@ export const createWindow = (): void => {
 				var w=document.createElement('div');
 				w.id='wpp';
 				w.setAttribute('data-pid',pid);
-				/* Couvre la zone de contenu depuis la position du Pro upsell */
 				w.style.cssText='position:fixed'
 					+';top:'+r.top+'px;left:'+r.left+'px;right:0;bottom:0'
 					+';z-index:500;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
 				document.body.appendChild(w);
 
-				/* Masque le Pro upsell (visibility:hidden préserve le layout) */
 				el.style.setProperty('visibility','hidden','important');
 				el.setAttribute('data-wcpos-off','1');
 
 				cPid=pid;cWrap=w;
 				loadPanel(pid,w,null,true);
 				setTimeout(function(){injecting=false;},600);
+				/* Après injection : obs léger jusqu'au prochain changement d'onglet */
+				mo.disconnect();
+				mo.observe(document.body,moLite);
 			}
 
 			window._wcpos_action=null;
@@ -253,14 +269,33 @@ export const createWindow = (): void => {
 				var a=window._wcpos_action;window._wcpos_action=null;
 				if(a.type==='nav'&&cWrap&&cPid){loadingPanel=false;loadPanel(cPid,cWrap,a.view,true);}
 				if(a.type==='submit')submitCaisse(a.action,a.data);
-			},100);
+			},200);
 
-			/* MutationObserver déboncé 150ms — évite la saturation React */
+			/* MO : deux modes
+			   moFull = subtree:true pour la détection initiale (coûteux, utilisé brièvement)
+			   moLite = childList seul sur body (très léger, utilisé quand panel stable)  */
 			var moTimer=null;
-			new MutationObserver(function(){
+			var moFull={childList:true,subtree:true};
+			var moLite={childList:true,subtree:false};
+			var mo=new MutationObserver(function(){
+				/* Dès qu'une mutation arrive, repasser en mode full le temps de détecter */
 				clearTimeout(moTimer);
-				moTimer=setTimeout(injectPanel,150);
-			}).observe(document.body,{childList:true,subtree:true});
+				moTimer=setTimeout(function(){
+					mo.disconnect();
+					mo.observe(document.body,moFull);
+					requestAnimationFrame(function(){
+						injectPanel();
+						/* Après detect, repasser en lite si panel trouvé */
+						setTimeout(function(){
+							if(document.getElementById('wpp')){
+								mo.disconnect();
+								mo.observe(document.body,moLite);
+							}
+						},300);
+					});
+				},600);  /* debounce 600ms : laisse React finir son render */
+			});
+			mo.observe(document.body,moFull);
 
 			function hasPP(){
 				var w=document.getElementById('wpp');
