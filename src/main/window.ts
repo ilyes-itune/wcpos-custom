@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.3';
+const APP_VERSION  = 'WCPOS Custom 4.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -143,7 +143,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v4.3');
+				console.log('[setup] debut v4.4');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -427,7 +427,13 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				/* Recherche de l'élément upsell feuille */
+				/* findPanel — texte d'abord (pas de reflow), puis géométrie.
+				   Le filtre "feuille" a été retiré en v4.4 : il était trop agressif
+				   et rejetait le bon container WCPOS quand l'upsell est structuré
+				   <div><p>le texte</p></div> (div rejeté car enfant contient le texte,
+				   <p> trop petit → best=null → panel jamais affiché).
+				   findPanel() n'est appelé qu'une fois par changement d'onglet
+				   (pas de MO) donc la perf n'est pas un problème. */
 				var W=window.innerWidth, H=window.innerHeight;
 				var sigLow=sig.toLowerCase();
 				var best=null, bestScore=0;
@@ -435,24 +441,22 @@ export const createWindow = (): void => {
 
 				document.querySelectorAll('div,section,aside').forEach(function(el){
 					if(el.id==='wpp')return;
-					var txt=(el.textContent||'').toLowerCase();
-					if(txt.indexOf(sigLow)===-1)return;
+					/* Passe 1 : texte (pas de reflow) */
+					if((el.textContent||'').toLowerCase().indexOf(sigLow)===-1)return;
 					checked++;
-
-					/* Rejeter si un enfant direct contient aussi la signature (el = container) */
-					for(var i=0;i<el.children.length;i++){
-						if((el.children[i].textContent||'').toLowerCase().indexOf(sigLow)!==-1)return;
-					}
-
-					/* el est la feuille portant le texte → reflow autorisé */
+					/* Passe 2 : géométrie (reflow seulement sur les candidats textuels) */
 					var r=el.getBoundingClientRect();
-					console.log('[panel] candidat '+checked+' x='+Math.round(r.x)
-						+' w='+Math.round(r.width)+' h='+Math.round(r.height));
 					if(r.width<W*0.15||r.height<H*0.05)return;
 					if(r.x===0&&r.width>W*0.85)return;
 					if(r.x>W*0.75||r.width<W*0.20)return;
 					var score=r.width*r.height;
-					if(score>bestScore){ bestScore=score; best={el:el,r:r}; }
+					/* Garder le plus GRAND conteneur valide (couvre mieux la zone upsell) */
+					if(score>bestScore){
+						bestScore=score;
+						best={el:el,r:r};
+						console.log('[panel] candidat '+checked+' score='+Math.round(score)
+							+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));
+					}
 				});
 
 				if(!best){
