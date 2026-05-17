@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.2';
+const APP_VERSION  = 'WCPOS Custom 4.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -143,7 +143,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] debut v4.2');
+				console.log('[setup] debut v4.3');
 				var REST=${JSON.stringify(WP_REST_BASE)};
 
 				function rp(ep,data,cb){
@@ -183,25 +183,83 @@ export const createWindow = (): void => {
 
 				/* ── Navigation vers l'onglet clients (caisse) ───────────────── */
 				function navToClients(){
-					console.log('[nav] → clients');
-					/* Méthode 1 : cliquer le lien nav WCPOS dont le href contient 'customers' */
+					console.log('[nav] tentative → clients | url='+window.location.href);
+
+					/* ── Diagnostic : lister tous les <a href> trouvés ─────── */
+					var allLinks=document.querySelectorAll('a[href]');
+					console.log('[nav] <a href> count='+allLinks.length);
+					allLinks.forEach(function(el){
+						console.log('[nav] href='+el.getAttribute('href')+' label='+(el.getAttribute('aria-label')||''));
+					});
+
+					/* ── Méthode 1 : <a href> contenant customers ──────────── */
 					var found=false;
-					document.querySelectorAll('a[href]').forEach(function(el){
+					allLinks.forEach(function(el){
 						if(found)return;
-						if((el.getAttribute('href')||'').indexOf('customers')!==-1){
-							el.click(); found=true;
-							console.log('[nav] click href customers OK');
+						if((el.getAttribute('href')||'').toLowerCase().indexOf('customers')!==-1){
+							el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+							found=true; console.log('[nav] M1 href click OK');
 						}
 					});
 					if(found)return;
-					/* Méthode 2 : pushState sur l'URL courante */
-					var url=window.location.href;
-					var newUrl=url.replace(/(products|orders|reports)/, 'customers');
-					if(newUrl!==url){
-						window.history.pushState({},'',newUrl);
-						window.dispatchEvent(new PopStateEvent('popstate',{state:{}}));
-						console.log('[nav] pushState customers OK: '+newUrl);
+
+					/* ── Méthode 2 : bouton/pressable avec aria-label client── */
+					var roles=document.querySelectorAll('[role="tab"],[role="button"],[role="link"]');
+					console.log('[nav] role elements count='+roles.length);
+					roles.forEach(function(el){
+						if(found)return;
+						var label=(el.getAttribute('aria-label')||el.textContent||'').toLowerCase();
+						if(label.indexOf('customer')!==-1||label.indexOf('client')!==-1){
+							el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+							found=true; console.log('[nav] M2 aria-label click: '+label);
+						}
+					});
+					if(found)return;
+
+					/* ── Méthode 3 : cliquer le Nème bouton dans la sidebar ── */
+					/* Ordre WCPOS : 0=POS 1=Products 2=Orders 3=Customers 4=Reports */
+					var sidebarEl=null;
+					document.querySelectorAll('div,nav,aside').forEach(function(el){
+						var r=el.getBoundingClientRect();
+						if(r.left===0&&r.width>20&&r.width<120&&r.height>300&&!sidebarEl){
+							sidebarEl=el;
+						}
+					});
+					if(sidebarEl){
+						var btns=sidebarEl.querySelectorAll(
+							'[role="button"],[role="tab"],button,a,[tabindex="0"]'
+						);
+						console.log('[nav] sidebar buttons count='+btns.length);
+						/* Log chaque bouton pour diagnostic */
+						btns.forEach(function(b,i){
+							console.log('[nav] sidebar['+i+'] label='+(b.getAttribute('aria-label')||b.textContent||'').substring(0,30));
+						});
+						/* Customers = index 3 (après POS, Products, Orders) */
+						var idx=3;
+						if(btns[idx]){
+							btns[idx].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+							found=true; console.log('[nav] M3 sidebar['+idx+'] click OK');
+						}
 					}
+					if(found)return;
+
+					/* ── Méthode 4 : pushState URL — remplace le dernier segment ── */
+					try{
+						var url=window.location.href;
+						var parsed=new URL(url);
+						var segs=parsed.pathname.replace(/\/+$/,'').split('/');
+						segs[segs.length-1]='customers';
+						var newPath=segs.join('/');
+						parsed.pathname=newPath;
+						var newUrl=parsed.toString();
+						if(newUrl!==url){
+							window.history.pushState({},'',newUrl);
+							window.dispatchEvent(new PopStateEvent('popstate',{state:{}}));
+							console.log('[nav] M4 pushState: '+newUrl);
+						}else{
+							console.warn('[nav] M4 URL inchangée: '+url);
+						}
+					}catch(e){ console.error('[nav] M4 erreur:',e.message); }
 				}
 
 				/* ── Overlay caisse fermée ────────────────────────────────────── */
