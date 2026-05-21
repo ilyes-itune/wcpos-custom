@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7';
+const APP_VERSION  = 'WCPOS Custom 4.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -52,9 +52,6 @@ export const createWindow = (): void => {
 			const pid = message.replace('[resize] recalcul pid=', '').trim();
 			setTimeout(() => runPanelForTab(pid || lastTab), 400);
 		}
-		/* Navigation demandée par le renderer (overlay bouton caisse) :
-		   le renderer ne peut pas naviguer fiablement dans React Navigation,
-		   donc il signale ici et le main process fait loadURL() directement. */
 		if (message.startsWith('[wcpos-nav-to] ')) {
 			const target = message.replace('[wcpos-nav-to] ', '').trim();
 			log.info(`[nav-to] demande → ${target}`);
@@ -67,7 +64,7 @@ export const createWindow = (): void => {
 				else segs.push(target);
 				const newUrl = parsed.origin + '/' + segs.join('/');
 				log.info(`[nav-to] ${cur} → ${newUrl}`);
-				lastTab = null; /* force re-injection panel après navigation */
+				lastTab = null;
 				mainWindow.webContents.loadURL(newUrl);
 			} catch (e) { log.error(`[nav-to] ${e}`); }
 		}
@@ -130,60 +127,154 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse / sans overlay
+	   BLOC 2 — Setup caisse / overlay (version complète avec gestion rôles)
 	   ════════════════════════════════════════════════════════════════════════ */
-function runSetup(): void {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.webContents.executeJavaScript(`(function(){
-        if(window.__setup||!document||!document.body)return;
-        try{
-            if(!document.querySelector('[data-testid="search-products"]')){
-                console.log('[setup] hors POS'); return;
-            }
-            window.__setup=true;
-            console.log('[setup] v5.0 - UI centralisée dans wcpos-custom');
+	function runSetup(): void {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
+		mainWindow.webContents.executeJavaScript(`(function(){
+			if(window.__setup||!document||!document.body)return;
+			try{
+				if(!document.querySelector('[data-testid="search-products"]')){
+					console.log('[setup] hors POS'); return;
+				}
+				window.__setup=true;
+				console.log('[setup] v5.0 - avec gestion can_edit + toast admin');
 
-            var REST=${JSON.stringify(WP_REST_BASE)};
+				var REST=${JSON.stringify(WP_REST_BASE)};
+				var isAdmin = false;
+				var adminToastShown = false;
 
-            function rp(ep,data,cb){
-                fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify(data),credentials:'include'})
-                    .then(function(r){return r.json();}).then(cb)
-                    .catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
-            }
+				// Helper pour les appels REST
+				function rp(ep,data,cb){
+					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
+						body:JSON.stringify(data),credentials:'include'})
+						.then(function(r){return r.json();}).then(cb)
+						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
+				}
 
-            window.__loadPanel=function(pid,wrap,cv,force){
-                if(window.__loadingPanel&&!force)return;
-                window.__loadingPanel=true;
-                wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
-                rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
-                    window.__loadingPanel=false;
-                    if(!d||!d.html){
-                        wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
-                        return;
-                    }
-                    wrap.innerHTML=d.html;
-                    wrap.querySelectorAll('script').forEach(function(s){
-                        var ns=document.createElement('script');ns.textContent=s.textContent;
-                        s.parentNode.replaceChild(ns,s);
-                    });
-                });
-            };
+				// Toast pour admin (non-bloquant)
+				function showAdminToast(message){
+					if(adminToastShown) return;
+					adminToastShown = true;
+					var toast = document.createElement('div');
+					toast.id = 'wct';
+					toast.textContent = message;
+					toast.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#f0a500; color:#1d2327; padding:12px 20px; border-radius:6px; font-size:13px; font-weight:600; z-index:999999; box-shadow:0 4px 12px rgba(0,0,0,.15); max-width:320px; font-family:sans-serif;';
+					document.body.appendChild(toast);
+					setTimeout(function(){
+						if(toast && toast.remove) toast.remove();
+					}, 5000);
+					console.log('[toast] admin:', message);
+				}
 
-            // PLUS D'OVERLAY ICI – tout est géré par wcpos-custom.php
+				// Récupération du rôle (can_edit)
+				rp('/whoami',{client_login:''},function(usr){
+					isAdmin = !!(usr && usr.can_edit === true);
+					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
+					
+					// Si admin et caisse fermée, afficher le toast une fois
+					if(isAdmin){
+						rp('/caisse/status',{},function(d){
+							if(d && !d.open && !adminToastShown){
+								showAdminToast('⚠️ Caisse fermée – mode administrateur (ventes possibles sans ouverture)');
+							}
+						});
+					}
+				});
 
-            // On garde juste la navigation vers l'onglet clients
-            function navToClients(){
-                console.log('[wcpos-nav-to] customers');
-            }
+				window.__loadPanel=function(pid,wrap,cv,force){
+					if(window.__loadingPanel&&!force)return;
+					window.__loadingPanel=true;
+					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
+					rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
+						window.__loadingPanel=false;
+						if(!d||!d.html){
+							wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
+							return;
+						}
+						wrap.innerHTML=d.html;
+						wrap.querySelectorAll('script').forEach(function(s){
+							var ns=document.createElement('script');ns.textContent=s.textContent;
+							s.parentNode.replaceChild(ns,s);
+						});
+					});
+				};
 
-            // Les autres fonctions utilitaires (hasPP, inPOS, currentTab) sont conservées
-            // mais ne font plus rien pour l'overlay
+				function navToClients(){
+					console.log('[wcpos-nav-to] customers');
+				}
 
-            console.log('[setup] OK (UI centralisée)');
-        }catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
-    })();`).catch((e: Error) => log.error('[setup] '+e.message));
-}
+				// Overlay bloquant pour caissier (avec vérification admin)
+				window.__showOverlay=function(msg){
+					if(document.getElementById('wco')) return;
+					if(isAdmin) {
+						console.log('[overlay] admin bypass');
+						return;
+					}
+					var ov=document.createElement('div');ov.id='wco';
+					ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
+						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
+					ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
+						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse ferm\u00e9e</h2>'
+						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
+						+(msg||'La caisse est ferm\u00e9e. Ouvrez-la avant de commencer.')+'</p>'
+						+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;'
+						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
+						+'\uD83D\uDD13 Ouvrir la caisse</button>';
+					document.body.appendChild(ov);
+					document.getElementById('wcb').addEventListener('click',function(){
+						ov.remove(); navToClients();
+					});
+					console.log('[overlay] show pour caissier');
+				};
+				
+				window.__hideOverlay=function(){
+					var ov=document.getElementById('wco');
+					if(ov){ov.remove();console.log('[overlay] hide');}
+				};
+
+				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
+				function currentTab(){
+					var u=window.location.href.toLowerCase();
+					var tabs=['products','orders','customers','reports'];
+					for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];}
+					return null;
+				}
+
+				function chkCaisse(){
+					if(!inPOS()) return;
+					
+					// Admin : pas d'overlay, on cache si existant
+					if(isAdmin) {
+						window.__hideOverlay();
+						return;
+					}
+					
+					// Caissier : vérification normale
+					var tab=currentTab();
+					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
+					rp('/caisse/status',{},function(d){
+						if(!d||d.error) return;
+						console.log('[caisse] open='+d.open+' tab='+tab);
+						if(d.open){
+							window.__hideOverlay();
+						} else if(isPosTab){
+							window.__showOverlay(d.message);
+						}
+					});
+				}
+
+				// Attendre que isAdmin soit déterminé (500ms suffisent)
+				setTimeout(function(){
+					chkCaisse();
+					setInterval(chkCaisse, 30000); // Vérification toutes les 30s
+				}, 500);
+
+				console.log('[setup] OK (gestion rôles active)');
+			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
+		})();`).catch((e: Error) => log.error('[setup] '+e.message));
+	}
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
