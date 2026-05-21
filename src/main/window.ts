@@ -130,147 +130,60 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse / overlay
+	   BLOC 2 — Setup caisse / sans overlay
 	   ════════════════════════════════════════════════════════════════════════ */
-	function runSetup(): void {
-		if (!mainWindow || mainWindow.isDestroyed()) return;
-		mainWindow.webContents.executeJavaScript(`(function(){
-			if(window.__setup||!document||!document.body)return;
-			try{
-				if(!document.querySelector('[data-testid="search-products"]')){
-					console.log('[setup] hors POS'); return;
-				}
-				window.__setup=true;
-				console.log('[setup] v4.2');
-				var REST=${JSON.stringify(WP_REST_BASE)};
+function runSetup(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.executeJavaScript(`(function(){
+        if(window.__setup||!document||!document.body)return;
+        try{
+            if(!document.querySelector('[data-testid="search-products"]')){
+                console.log('[setup] hors POS'); return;
+            }
+            window.__setup=true;
+            console.log('[setup] v5.0 - UI centralisée dans wcpos-custom');
 
-				function rp(ep,data,cb){
-					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
-						body:JSON.stringify(data),credentials:'include'})
-						.then(function(r){return r.json();}).then(cb)
-						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
-				}
+            var REST=${JSON.stringify(WP_REST_BASE)};
 
-				window.__loadPanel=function(pid,wrap,cv,force){
-					if(window.__loadingPanel&&!force)return;
-					window.__loadingPanel=true;
-					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
-					rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
-						window.__loadingPanel=false;
-						if(!d||!d.html){
-							wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
-							return;
-						}
-						wrap.innerHTML=d.html;
-						wrap.querySelectorAll('script').forEach(function(s){
-							var ns=document.createElement('script');ns.textContent=s.textContent;
-							s.parentNode.replaceChild(ns,s);
-						});
-					});
-				};
+            function rp(ep,data,cb){
+                fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(data),credentials:'include'})
+                    .then(function(r){return r.json();}).then(cb)
+                    .catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
+            }
 
-				function navToClients(){
-					/* Signale au main process de faire loadURL() — plus fiable
-					   que toute manipulation DOM/React depuis le renderer. */
-					console.log('[wcpos-nav-to] customers');
-				}
+            window.__loadPanel=function(pid,wrap,cv,force){
+                if(window.__loadingPanel&&!force)return;
+                window.__loadingPanel=true;
+                wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
+                rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
+                    window.__loadingPanel=false;
+                    if(!d||!d.html){
+                        wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
+                        return;
+                    }
+                    wrap.innerHTML=d.html;
+                    wrap.querySelectorAll('script').forEach(function(s){
+                        var ns=document.createElement('script');ns.textContent=s.textContent;
+                        s.parentNode.replaceChild(ns,s);
+                    });
+                });
+            };
 
-				window.__showOverlay=function(msg){
-					if(document.getElementById('wco'))return;
-					var ov=document.createElement('div');ov.id='wco';
-					ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
-						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
-					ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
-						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse ferm\u00e9e</h2>'
-						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||'La caisse est ferm\u00e9e. Ouvrez-la avant de commencer.')+'</p>'
-						+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;'
-						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
-						+'\uD83D\uDD13 Ouvrir la caisse</button>';
-					document.body.appendChild(ov);
-					document.getElementById('wcb').addEventListener('click',function(){
-						ov.remove(); navToClients();
-					});
-					console.log('[overlay] show');
-				};
-				window.__hideOverlay=function(){
-					var ov=document.getElementById('wco');
-					if(ov){ov.remove();console.log('[overlay] hide');}
-				};
+            // PLUS D'OVERLAY ICI – tout est géré par wcpos-custom.php
 
-				function hasPP(){
-					var w=document.getElementById('wpp');
-					return !!(w&&w.style.display!=='none'&&w.innerHTML.length>100);
-				}
-				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
-				function currentTab(){
-					var u=window.location.href.toLowerCase();
-					var tabs=['products','orders','customers','reports'];
-					for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];}
-					return null;
-				}
+            // On garde juste la navigation vers l'onglet clients
+            function navToClients(){
+                console.log('[wcpos-nav-to] customers');
+            }
 
-				function chkCaisse(){
-					if(!inPOS())return;
-					var tab=currentTab();
-					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
-					rp('/caisse/status',{},function(d){
-						if(!d||d.error)return;
-						console.log('[caisse] open='+d.open+' tab='+tab);
-						if(d.open){window.__hideOverlay();}
-						else if(isPosTab){window.__showOverlay(d.message);}
-					});
-				}
+            // Les autres fonctions utilitaires (hasPP, inPOS, currentTab) sont conservées
+            // mais ne font plus rien pour l'overlay
 
-				window._wcpos_action=null;
-				setInterval(function(){
-					if(!window._wcpos_action)return;
-					var a=window._wcpos_action;window._wcpos_action=null;
-					var wpp=document.getElementById('wpp');
-					if(a.type==='nav'&&wpp){
-						window.__loadingPanel=false;
-						window.__loadPanel(wpp.getAttribute('data-pid'),wpp,a.view,true);
-					}
-					if(a.type==='submit'){
-						var fd={};
-						if(a.data&&typeof a.data.entries==='function'){
-							for(var p of a.data.entries()){fd[p[0]]=p[1];}
-						}else if(a.data&&typeof a.data==='object'){fd=Object.assign({},a.data);}
-						rp('/caisse/submit',Object.assign({wcpos_caisse_action:a.action},fd),function(d){
-							window.__hideOverlay();
-							var wpp2=document.getElementById('wpp');
-							if(wpp2)window.__loadPanel(wpp2.getAttribute('data-pid'),wpp2,'dashboard',true);
-							setTimeout(chkCaisse,400);
-						});
-					}
-				},200);
-
-				chkCaisse();
-				setInterval(chkCaisse,60000);
-				var _pws=false;
-				setInterval(function(){
-					if(!inPOS())return;
-					if(hasPP()){window.__hideOverlay();_pws=true;}
-					else if(_pws){_pws=false;chkCaisse();}
-				},1000);
-
-				if(!window.__wcpos_resize){
-					window.__wcpos_resize=true;
-					var _rt=null;
-					window.addEventListener('resize',function(){
-						clearTimeout(_rt);
-						_rt=setTimeout(function(){
-							var w=document.getElementById('wpp');
-							if(w){w.remove();console.log('[resize] recalcul pid='+w.getAttribute('data-pid'));}
-						},400);
-					});
-				}
-
-				console.log('[setup] OK');
-			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
-		})();`).catch((e: Error) => log.error('[setup] '+e.message));
-	}
+            console.log('[setup] OK (UI centralisée)');
+        }catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
+    })();`).catch((e: Error) => log.error('[setup] '+e.message));
+}
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
