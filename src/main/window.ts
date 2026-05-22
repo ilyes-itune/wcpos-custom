@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.6';
+const APP_VERSION  = 'WCPOS Custom 5.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -460,7 +460,7 @@ export const createWindow = (): void => {
                 window.__loadPanel(tab,w,null,true);
                 console.log('[panel] #wpp créé');
             }catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
-        })\`).catch((e: Error) => log.error(\`[panel] \${e.message}\`));
+        })();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
     }
 
     /* ── Orchestration ───────────────────────────────────────────────────── */
