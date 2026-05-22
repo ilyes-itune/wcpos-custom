@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.4';
+const APP_VERSION  = 'WCPOS Custom 5.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -392,7 +392,7 @@ export const createWindow = (): void => {
                     if(window.__hideOverlay)window.__hideOverlay();
                     fetch(REST+'/caisse/status',{method:'POST',credentials:'include'})
                     .then(function(r){return r.json();})
-                    .then(function(d){if(!d.real_open)showAdminToast('\u26a0\ufe0f Caisse ferm\u00e9e \u2013 mode administrateur');})
+                    .then(function(d){var isOpen=(d.real_open!==undefined)?d.real_open:d.open;if(!isOpen)showAdminToast('\u26a0\ufe0f Caisse ferm\u00e9e \u2013 mode administrateur');})
                     .catch(function(){});
                 } else {
                     checkCaisse();
@@ -417,20 +417,11 @@ export const createWindow = (): void => {
             return;
         }
 
-        const PT: Record<string, string> = {
-            products: 'ajustez les prix',
-            orders:   'imprimez les',
-            customers:'ajoutez de nouveaux clients',
-            reports:  'bloquez les rapports',
-        };
-        const sig = PT[tab];
-        if (!sig) return;
         log.info(`[panel] → ${tab}`);
 
         mainWindow.webContents.executeJavaScript(`(function(){
             try{
                 var tab=${JSON.stringify(tab)};
-                var sig=${JSON.stringify(sig)}.toLowerCase();
                 if(!document.querySelector('[data-testid="search-products"]')){console.log('[panel] hors POS');return;}
                 if(!window.__setup){console.log('[panel] setup absent');return;}
 
@@ -439,50 +430,37 @@ export const createWindow = (): void => {
                     wpp.style.removeProperty('display');console.log('[panel] re-affiche tab='+tab);return;
                 }
 
-                var W=window.innerWidth,H=window.innerHeight,best=null,bestScore=0,checked=0;
-                var candidates=[];
-                document.querySelectorAll('div,section,aside').forEach(function(el){
-                    if(el.id==='wpp')return;
-                    if((el.textContent||'').toLowerCase().indexOf(sig)===-1)return;
-                    var childHas=false;
-                    for(var i=0;i<el.children.length;i++){if((el.children[i].textContent||'').toLowerCase().indexOf(sig)!==-1){childHas=true;break;}}
-                    if(!childHas)candidates.push(el);
-                });
-                var limit=Math.min(candidates.length,10);
-                for(var ci=0;ci<limit;ci++){
-                    var el=candidates[ci];checked++;
-                    var r=el.getBoundingClientRect();
-                    if(r.width<W*0.15||r.height<H*0.05)continue;
-                    if(r.x===0&&r.width>W*0.85)continue;
-                    if(r.x>W*0.75||r.width<W*0.20)continue;
-                    var score=r.width*r.height;
-                    if(score>bestScore){bestScore=score;best={el:el,r:r};
-                        console.log('[panel] candidat tab='+tab+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));}
-                }
-                console.log('[panel] checked='+checked+' found='+(best?'OUI':'NON'));
-                if(!best){if(wpp)wpp.style.setProperty('display','none','important');return;}
+                var W=window.innerWidth;
 
-                var navLeft=(function(){
-                    var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]','[class*="sidebar"]','nav[class]'];
-                    for(var i=0;i<sel.length;i++){var e2=document.querySelector(sel[i]);if(e2){var r2=e2.getBoundingClientRect();if(r2.left===0&&r2.width>0&&r2.width<W*0.15)return Math.round(r2.right);}}
-                    return best.r.left<W*0.30?Math.round(best.r.left):55;
-                })();
-                var hdrBottom=(function(){
-                    var maxB=0;
-                    document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],[class*="Header"],[class*="TopBar"],[class*="AppBar"],[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
-                    .forEach(function(e3){var r3=e3.getBoundingClientRect();if(r3.top<=5&&r3.width>W*0.5&&r3.height>10&&r3.height<200)if(Math.round(r3.bottom)>maxB)maxB=Math.round(r3.bottom);});
-                    return maxB>0?maxB:50;
-                })();
+                /* Détection structurelle : barre nav gauche */
+                var navLeft=56;
+                var navSel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]','[class*="sidebar"]','nav[class]'];
+                for(var ni=0;ni<navSel.length;ni++){
+                    var ne=document.querySelector(navSel[ni]);
+                    if(ne){var nr=ne.getBoundingClientRect();if(nr.left===0&&nr.width>0&&nr.width<W*0.2){navLeft=Math.round(nr.right);break;}}
+                }
+
+                /* Détection structurelle : bas du header */
+                var hdrBottom=50;
+                document.querySelectorAll('header,nav,[role="banner"],[class*="Header"],[class*="TopBar"],[class*="AppBar"],[class*="Toolbar"],[class*="header"],[class*="topbar"]')
+                .forEach(function(he){
+                    var hr=he.getBoundingClientRect();
+                    if(hr.top<=5&&hr.width>W*0.5&&hr.height>10&&hr.height<200)
+                        if(Math.round(hr.bottom)>hdrBottom)hdrBottom=Math.round(hr.bottom);
+                });
+
+                console.log('[panel] tab='+tab+' navLeft='+navLeft+' hdrBottom='+hdrBottom);
 
                 if(wpp)wpp.remove();
                 var w=document.createElement('div');
                 w.id='wpp';w.setAttribute('data-pid',tab);
-                w.style.cssText='position:fixed;top:'+hdrBottom+'px;left:'+navLeft+'px;right:0;bottom:0;z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
+                w.style.cssText='position:fixed;top:'+hdrBottom+'px;left:'+navLeft+'px;right:0;bottom:0;'
+                    +'z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
                 document.body.appendChild(w);
-                best.el.style.setProperty('visibility','hidden','important');
                 window.__loadPanel(tab,w,null,true);
+                console.log('[panel] #wpp créé');
             }catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
-        })();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
+        })\`).catch((e: Error) => log.error(\`[panel] \${e.message}\`));
     }
 
     /* ── Orchestration ───────────────────────────────────────────────────── */
