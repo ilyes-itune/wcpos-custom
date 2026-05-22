@@ -208,3 +208,11 @@ contextBridge.exposeInMainWorld('Buffer', {
 	isBuffer: (obj: any) => Buffer.isBuffer(obj),
 	concat: (buffers: any[], totalLength?: number) => Buffer.concat(buffers, totalLength),
 });
+import { contextBridge } from 'electron';
+
+contextBridge.exposeInMainWorld('electron', {
+    basePath: (__dirname || '').replace(/\\/g, '/'),
+    version: process.env.npm_package_version || '4.7',
+    // Délègue l'overlay au web content (wcpos-custom.php)
+    overlayDelegated: true
+});
