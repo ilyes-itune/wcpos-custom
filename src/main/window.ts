@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0';
+const APP_VERSION  = 'WCPOS Custom 5.0.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -101,7 +101,11 @@ export const createWindow = (): void => {
             cb({ responseHeaders: h });
         }
     );
-
+	mainWindow.webContents.executeJavaScript('
+    window.electron = window.electron || {};
+    window.electron.overlayDelegated = true;
+    console.log('[electron] overlayDelegated = true');
+`);
     loadURL(mainWindow);
     mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
@@ -129,12 +133,64 @@ export const createWindow = (): void => {
     /* ════════════════════════════════════════════════════════════════════════
        BLOC 2 — Setup (version minimaliste - plus d'overlay ici, juste le panel)
        ════════════════════════════════════════════════════════════════════════ */
-    contextBridge.exposeInMainWorld('electron', {
-    basePath: ...,
-    version: ...,
-    // Délègue l'overlay au web content (wcpos-custom.php)
-    overlayDelegated: true
-});
+    function runSetup(): void {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        mainWindow.webContents.executeJavaScript(`(function(){
+            if(window.__setup||!document||!document.body)return;
+            try{
+                if(!document.querySelector('[data-testid="search-products"]')){
+                    console.log('[setup] hors POS'); return;
+                }
+                window.__setup=true;
+                console.log('[setup] v6.0 - overlay délégué à wcpos-custom.php');
+
+                var REST=${JSON.stringify(WP_REST_BASE)};
+
+                function rp(ep,data,cb){
+                    fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(data),credentials:'include'})
+                        .then(function(r){return r.json();}).then(cb)
+                        .catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
+                }
+
+                window.__loadPanel=function(pid,wrap,cv,force){
+                    if(window.__loadingPanel&&!force)return;
+                    window.__loadingPanel=true;
+                    wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
+                    rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
+                        window.__loadingPanel=false;
+                        if(!d||!d.html){
+                            wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
+                            return;
+                        }
+                        wrap.innerHTML=d.html;
+                        wrap.querySelectorAll('script').forEach(function(s){
+                            var ns=document.createElement('script');ns.textContent=s.textContent;
+                            s.parentNode.replaceChild(ns,s);
+                        });
+                    });
+                };
+
+                function navToClients(){
+                    console.log('[wcpos-nav-to] customers');
+                }
+
+                // L'overlay est entièrement délégué à wcpos-custom.php
+                // On expose juste des fonctions no-op (ne rien faire) pour compatibilité
+                window.__overlayShow = function(msg){
+                    console.log('[overlay] délégué à wcpos-custom, ignoré dans window.ts');
+                };
+                window.__overlayHide = function(){
+                    console.log('[overlay] délégué à wcpos-custom, ignoré dans window.ts');
+                };
+                window.__overlayIsVisible = function(){
+                    return false;
+                };
+
+                console.log('[setup] OK - overlay délégué');
+            }catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
+        })();`).catch((e: Error) => log.error('[setup] '+e.message));
+    }
 
     /* ════════════════════════════════════════════════════════════════════════
        BLOC 3 — Panel
