@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8';
+const APP_VERSION  = 'WCPOS Custom 4.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -127,7 +127,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse / overlay (version complète avec gestion rôles)
+	   BLOC 2 — Setup (expose API overlay pour wcpos-custom.php)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -138,49 +138,16 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0 - avec gestion can_edit + toast admin');
+				console.log('[setup] v5.2 - API overlay exposée');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
-				var isAdmin = false;
-				var adminToastShown = false;
 
-				// Helper pour les appels REST
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
 						body:JSON.stringify(data),credentials:'include'})
 						.then(function(r){return r.json();}).then(cb)
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
-
-				// Toast pour admin (non-bloquant)
-				function showAdminToast(message){
-					if(adminToastShown) return;
-					adminToastShown = true;
-					var toast = document.createElement('div');
-					toast.id = 'wct';
-					toast.textContent = message;
-					toast.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#f0a500; color:#1d2327; padding:12px 20px; border-radius:6px; font-size:13px; font-weight:600; z-index:999999; box-shadow:0 4px 12px rgba(0,0,0,.15); max-width:320px; font-family:sans-serif;';
-					document.body.appendChild(toast);
-					setTimeout(function(){
-						if(toast && toast.remove) toast.remove();
-					}, 5000);
-					console.log('[toast] admin:', message);
-				}
-
-				// Récupération du rôle (can_edit)
-				rp('/whoami',{client_login:''},function(usr){
-					isAdmin = !!(usr && usr.can_edit === true);
-					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
-					
-					// Si admin et caisse fermée, afficher le toast une fois
-					if(isAdmin){
-						rp('/caisse/status',{},function(d){
-							if(d && !d.open && !adminToastShown){
-								showAdminToast('⚠️ Caisse fermée – mode administrateur (ventes possibles sans ouverture)');
-							}
-						});
-					}
-				});
 
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
@@ -200,17 +167,9 @@ export const createWindow = (): void => {
 					});
 				};
 
-				function navToClients(){
-					console.log('[wcpos-nav-to] customers');
-				}
-
-				// Overlay bloquant pour caissier (avec vérification admin)
-				window.__showOverlay=function(msg){
+				// ========== API OVERLAY EXPOSÉE POUR wcpos-custom.php ==========
+				window.__overlayShow = function(msg){
 					if(document.getElementById('wco')) return;
-					if(isAdmin) {
-						console.log('[overlay] admin bypass');
-						return;
-					}
 					var ov=document.createElement('div');ov.id='wco';
 					ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
 						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
@@ -224,54 +183,23 @@ export const createWindow = (): void => {
 						+'\uD83D\uDD13 Ouvrir la caisse</button>';
 					document.body.appendChild(ov);
 					document.getElementById('wcb').addEventListener('click',function(){
-						ov.remove(); navToClients();
+						ov.remove();
+						console.log('[wcpos-nav-to] customers');
 					});
-					console.log('[overlay] show pour caissier');
+					console.log('[overlay] show via API');
 				};
-				
-				window.__hideOverlay=function(){
+
+				window.__overlayHide = function(){
 					var ov=document.getElementById('wco');
-					if(ov){ov.remove();console.log('[overlay] hide');}
+					if(ov){ov.remove(); console.log('[overlay] hide via API');}
 				};
 
-				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
-				function currentTab(){
-					var u=window.location.href.toLowerCase();
-					var tabs=['products','orders','customers','reports'];
-					for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];}
-					return null;
-				}
+				window.__overlayIsVisible = function(){
+					return !!document.getElementById('wco');
+				};
+				// ========== FIN API ==========
 
-				function chkCaisse(){
-					if(!inPOS()) return;
-					
-					// Admin : pas d'overlay, on cache si existant
-					if(isAdmin) {
-						window.__hideOverlay();
-						return;
-					}
-					
-					// Caissier : vérification normale
-					var tab=currentTab();
-					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
-					rp('/caisse/status',{},function(d){
-						if(!d||d.error) return;
-						console.log('[caisse] open='+d.open+' tab='+tab);
-						if(d.open){
-							window.__hideOverlay();
-						} else if(isPosTab){
-							window.__showOverlay(d.message);
-						}
-					});
-				}
-
-				// Attendre que isAdmin soit déterminé (500ms suffisent)
-				setTimeout(function(){
-					chkCaisse();
-					setInterval(chkCaisse, 30000); // Vérification toutes les 30s
-				}, 500);
-
-				console.log('[setup] OK (gestion rôles active)');
+				console.log('[setup] OK - API overlay disponible');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
 	}
