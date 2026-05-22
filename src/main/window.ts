@@ -276,17 +276,40 @@ export const createWindow = (): void => {
                     }
                     return '';
                 }
-                function fire(){_ready=true;console.log('[custom] auth ready canEdit='+_canEdit);_cbs.forEach(function(cb){cb(_canEdit);});_cbs=[];}
-                function init(){
-                    _tries++;
-                    var dl=getUserFromDOM();
-                    if(!dl){if(_tries>=20){console.warn('[custom] getUserFromDOM timeout, canEdit=false');fire();}else setTimeout(init,500);return;}
-                    fetch(REST+'/whoami',{method:'POST',body:JSON.stringify({client_login:dl}),headers:{'Content-Type':'application/json'},credentials:'include'})
+                function fire(){_ready=true;console.log('[custom] auth ready canEdit='+_canEdit+' login='+_login);_cbs.forEach(function(cb){cb(_canEdit);});_cbs=[];}
+                function doWhoami(login){
+                    fetch(REST+'/whoami',{method:'POST',body:JSON.stringify({client_login:login}),headers:{'Content-Type':'application/json'},credentials:'include'})
                     .then(function(r){return r.json();})
-                    .then(function(d){_login=d.login||dl;_canEdit=!!d.can_edit;fire();})
+                    .then(function(d){
+                        _login=d.login||login||'';
+                        _canEdit=!!d.can_edit;
+                        console.log('[custom] whoami can_edit='+_canEdit+' login='+_login);
+                        fire();
+                    })
                     .catch(function(e){console.warn('[custom] whoami erreur:',e.message);fire();});
                 }
-                return{init:init,canEdit:function(){return _canEdit;},login:function(){return _login;},onReady:function(cb){if(_ready)cb(_canEdit);else _cbs.push(cb);}};
+                function init(){
+                    _tries++;
+                    /* 1er essai : cookie auth sans login DOM */
+                    if(_tries===1){ doWhoami(''); return; }
+                    /* Essais suivants : login depuis le DOM */
+                    var dl=getUserFromDOM();
+                    if(!dl){if(_tries>=20){console.warn('[custom] getUserFromDOM timeout');fire();}else setTimeout(init,500);return;}
+                    doWhoami(dl);
+                }
+                /* Si whoami sans login DOM donne can_edit=false, retente avec DOM */
+                function initWithDOM(){
+                    var dl=getUserFromDOM();
+                    if(dl&&dl!==_login){ doWhoami(dl); return; }
+                    if(_tries<20){ setTimeout(function(){var d=getUserFromDOM();if(d&&d!==_login)doWhoami(d);},500); }
+                }
+                return{
+                    init:init,
+                    initWithDOM:initWithDOM,
+                    canEdit:function(){return _canEdit;},
+                    login:function(){return _login;},
+                    onReady:function(cb){if(_ready)cb(_canEdit);else _cbs.push(cb);}
+                };
             })();
             window.wcposAuth.init();
 
