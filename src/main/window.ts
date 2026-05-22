@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.1';
+const APP_VERSION  = 'WCPOS Custom 5.0.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -84,6 +84,16 @@ export const createWindow = (): void => {
         { urls: [WP_SITE_URL + '/*'] },
         (d, cb) => cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } })
     );
+        /* ── Blocage réseau ──────────────────────────────────────────────────── */
+    mainWindow.webContents.session.webRequest.onBeforeRequest(
+        { urls: ['*://*.novu.co/*','*://novu.co/*','*://updates.wcpos.com/*',
+                 '*://wcpos.com/*','*://*.wcpos.com/*','*://api.github.com/repos/wcpos/*'] },
+        (_d, cb) => cb({ cancel: true })
+    );
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+        { urls: [WP_SITE_URL + '/*'] },
+        (d, cb) => cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } })
+    );
     mainWindow.webContents.session.webRequest.onHeadersReceived(
         { urls: [WP_SITE_URL + '/*'] },
         (d, cb) => {
@@ -101,11 +111,16 @@ export const createWindow = (): void => {
             cb({ responseHeaders: h });
         }
     );
-	mainWindow.webContents.executeJavaScript('
-    window.electron = window.electron || {};
-    window.electron.overlayDelegated = true;
-    console.log('[electron] overlayDelegated = true');
-`);
+
+    // ========== EXPOSITION DE overlayDelegated ==========
+    mainWindow.webContents.executeJavaScript(`
+        window.electron = window.electron || {};
+        window.electron.overlayDelegated = true;
+        console.log('[electron] overlayDelegated = true');
+    `);
+
+    loadURL(mainWindow);
+    mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
     loadURL(mainWindow);
     mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
