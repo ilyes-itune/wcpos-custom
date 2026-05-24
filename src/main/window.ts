@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.2';
+const APP_VERSION  = 'WCPOS Custom 4.7.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.2 : Correction régression overlay admin + toast état
+	   v4.7.3 : getUserFromDOM + toast admin état
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.7.2');
+				console.log('[setup] v4.7.3');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
@@ -173,8 +173,19 @@ export const createWindow = (): void => {
 					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
+				/* Récupération du login depuis le DOM WCPOS */
+				var domLogin = '';
+				var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+				for(var i=0; i<els.length; i++){
+					var el = els[i], txt = (el.textContent||'').trim();
+					if(el.children.length===0 && txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt)){
+						domLogin = txt.toLowerCase(); break;
+					}
+				}
+				console.log('[setup] domLogin =', domLogin);
+
 				/* Auth admin */
-				rp('/whoami',{client_login:''},function(usr){
+				rp('/whoami',{client_login: domLogin},function(usr){
 					isAdmin = !!(usr && usr.can_edit === true);
 					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
 					if(isAdmin){
@@ -182,7 +193,6 @@ export const createWindow = (): void => {
 							if(d) showAdminCaisseToast(!!d.open);
 						});
 					}
-					// Traiter l'overlay en attente
 					if(_overlayPending !== null){
 						window.__showOverlay(_overlayPending);
 						_overlayPending = null;
@@ -211,7 +221,6 @@ export const createWindow = (): void => {
 					console.log('[wcpos-nav-to] customers');
 				}
 
-				/* Overlay — ne s'affiche que si isAdmin est déterminé ET faux */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco')) return;
 					if(isAdmin === null){
