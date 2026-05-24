@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.3';
+const APP_VERSION  = 'WCPOS Custom 4.8.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,12 +128,12 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.8.3 : Auth via /caisse/status (bypass + can_edit enrichis par mu-plugin v4.7.1)
+	   v4.8.4 : initAuth() — cookie + login DOM avec polling
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.8.3';
+			var SETUP_VERSION = '4.8.4';
 
 			var highestId = window.setTimeout(function(){}, 0);
 			for (var i = 0; i < highestId; i++) {
@@ -181,16 +181,69 @@ export const createWindow = (): void => {
 					if(old) old.remove();
 				}
 
-				// Auth via /caisse/status (bypass + can_edit enrichis par mu-plugin v4.7.1)
-				rp('/caisse/status', {}, function(d) {
-					isAdmin = !!(d && (d.bypass || d.can_edit));
-					console.log('[setup] isAdmin =', isAdmin, '(bypass=' + (d&&d.bypass) + ', can_edit=' + (d&&d.can_edit) + ')');
-					if (_overlayPending !== null) {
-						window.__showOverlay(_overlayPending);
-						_overlayPending = null;
+				// getUserFromDOM avec filtre des labels connus
+				var KNOWN_LABELS = ['pos', 'produits', 'en stock', 'en vedette', 'en solde',
+					'catégorie', 'étiquette', 'marque', 'usmm', 'voir la démo', 'passer à pro'];
+
+				function getUserFromDOM(){
+					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+					for (var i = 0; i < els.length; i++) {
+						var el = els[i], txt = (el.textContent || '').trim();
+						var isLeaf = el.children.length === 0;
+						var matchesPattern = txt.length >= 2 && txt.length <= 40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						if (isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase()) === -1) {
+							return txt.toLowerCase();
+						}
 					}
-					chkCaisse();
-				});
+					return '';
+				}
+
+				// initAuth : cookie + login DOM avec polling
+				function initAuth(){
+					var domLogin = getUserFromDOM();
+					console.log('[auth] domLogin initial =', domLogin || '(vide)');
+
+					var resolved = false;
+
+					function onResult(usr){
+						if(resolved) return;
+						if(!(usr && usr.can_edit === true)) return;
+						resolved = true;
+						isAdmin = true;
+						console.log('[auth] admin confirmé via', usr.login || 'cookie');
+						if (_overlayPending !== null) {
+							window.__showOverlay(_overlayPending);
+							_overlayPending = null;
+						}
+						chkCaisse();
+					}
+
+					// Requête avec cookie (client_login vide) ou login DOM
+					rp('/whoami', {client_login: domLogin || ''}, onResult);
+
+					// Si DOM vide, polling jusqu'à 20 essais
+					if(!domLogin){
+						var tries = 0;
+						var poll = setInterval(function(){
+							var dl = getUserFromDOM();
+							if(dl || ++tries >= 20){
+								clearInterval(poll);
+								if(dl && dl !== domLogin){
+									console.log('[auth] domLogin polling =', dl);
+									rp('/whoami', {client_login: dl}, onResult);
+								} else if(tries >= 20){
+									console.log('[auth] timeout, isAdmin = false');
+									isAdmin = false;
+									if (_overlayPending !== null) {
+										window.__showOverlay(_overlayPending);
+										_overlayPending = null;
+									}
+									chkCaisse();
+								}
+							}
+						}, 500);
+					}
+				}
 
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
@@ -267,7 +320,7 @@ export const createWindow = (): void => {
 						window.__hideOverlay();
 						rp('/caisse/status', {}, function(d){
 							if(!d || d.error) return;
-							console.log('[caisse] admin open=' + d.open + ' real_open=' + d.real_open);
+							console.log('[caisse] admin open=' + d.open);
 							if(!d.open){
 								showAdminCaisseToast();
 							} else {
@@ -290,8 +343,11 @@ export const createWindow = (): void => {
 					});
 				}
 
+				// Lancer l'auth
+				initAuth();
+
+				// Intervalle périodique
 				setTimeout(function(){
-					chkCaisse();
 					setInterval(chkCaisse, 30000);
 				}, 500);
 
