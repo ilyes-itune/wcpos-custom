@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.8';
+const APP_VERSION  = 'WCPOS Custom 4.7.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,12 +128,12 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.8 : Nettoyage des anciens intervalles + flag versionné
+	   v4.7.9 : getUserFromDOM réessayé jusqu'à 10 fois (ignore "pos")
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.7.8';
+			var SETUP_VERSION = '4.7.9';
 
 			// Nettoyer les anciens intervalles/timers
 			var highestId = window.setTimeout(function(){}, 0);
@@ -181,29 +181,50 @@ export const createWindow = (): void => {
 					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
+				// getUserFromDOM avec réessai (ignore "pos")
 				var domLogin = '';
-				var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
-				for(var i=0; i<els.length; i++){
-					var el = els[i], txt = (el.textContent||'').trim();
-					if(el.children.length===0 && txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt)){
-						domLogin = txt.toLowerCase(); break;
+				var attempts = 0;
+				var maxAttempts = 10;
+
+				function tryGetLogin(callback) {
+					attempts++;
+					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+					for (var i = 0; i < els.length; i++) {
+						var el = els[i], txt = (el.textContent || '').trim();
+						if (el.children.length === 0 && txt.length >= 2 && txt.length <= 40 && /^[a-zA-ZÀ-ÿ]/.test(txt)) {
+							var login = txt.toLowerCase();
+							// Ignorer "pos" tant qu'on n'a pas épuisé les tentatives
+							if (login !== 'pos' || attempts >= maxAttempts) {
+								callback(login);
+								return;
+							}
+						}
+					}
+					if (attempts < maxAttempts) {
+						setTimeout(function() { tryGetLogin(callback); }, 500);
+					} else {
+						callback(domLogin || '');
 					}
 				}
-				console.log('[setup] domLogin =', domLogin);
 
-				rp('/whoami',{client_login: domLogin},function(usr){
-					isAdmin = !!(usr && usr.can_edit === true);
-					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
-					if(isAdmin){
-						rp('/caisse/status',{},function(d){
-							if(d) showAdminCaisseToast(!!d.open);
-						});
-					}
-					if(_overlayPending !== null){
-						window.__showOverlay(_overlayPending);
-						_overlayPending = null;
-					}
-					chkCaisse();
+				tryGetLogin(function(login) {
+					domLogin = login;
+					console.log('[setup] domLogin =', domLogin);
+
+					rp('/whoami',{client_login: domLogin},function(usr){
+						isAdmin = !!(usr && usr.can_edit === true);
+						console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
+						if(isAdmin){
+							rp('/caisse/status',{},function(d){
+								if(d) showAdminCaisseToast(!!d.open);
+							});
+						}
+						if(_overlayPending !== null){
+							window.__showOverlay(_overlayPending);
+							_overlayPending = null;
+						}
+						chkCaisse();
+					});
 				});
 
 				window.__loadPanel=function(pid,wrap,cv,force){
