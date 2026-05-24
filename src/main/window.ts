@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.0';
+const APP_VERSION  = 'WCPOS Custom 4.8.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,12 +128,12 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.8.0 : Auth via /caisse/status (bypass/can_edit), sans getUserFromDOM
+	   v4.8.1 : Auth via /whoami (cookie), sans getUserFromDOM
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.8.0';
+			var SETUP_VERSION = '4.8.1';
 
 			// Nettoyer les anciens intervalles/timers
 			var highestId = window.setTimeout(function(){}, 0);
@@ -181,12 +181,14 @@ export const createWindow = (): void => {
 					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
-				// Auth via /caisse/status (retourne bypass, can_edit, open)
-				rp('/caisse/status', {}, function(d) {
-					isAdmin = !!(d && (d.bypass || d.can_edit));
-					console.log('[setup] isAdmin =', isAdmin, '(bypass=' + (d&&d.bypass) + ', can_edit=' + (d&&d.can_edit) + ')');
+				// Auth via /whoami (cookie WordPress)
+				rp('/whoami', {client_login: ''}, function(usr) {
+					isAdmin = !!(usr && usr.can_edit === true);
+					console.log('[setup] whoami can_edit =', isAdmin, 'login:', usr?.login, 'roles:', usr?.roles);
 					if (isAdmin) {
-						showAdminCaisseToast(!!(d && d.open));
+						rp('/caisse/status', {}, function(d) {
+							if (d) showAdminCaisseToast(!!d.open);
+						});
 					}
 					if (_overlayPending !== null) {
 						window.__showOverlay(_overlayPending);
