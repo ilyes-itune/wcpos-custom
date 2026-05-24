@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.7';
+const APP_VERSION  = 'WCPOS Custom 4.7.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,12 +128,20 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.7 : Flag versionné __setupVersion pour forcer réexécution après màj
+	   v4.7.8 : Nettoyage des anciens intervalles + flag versionné
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.7.7';
+			var SETUP_VERSION = '4.7.8';
+
+			// Nettoyer les anciens intervalles/timers
+			var highestId = window.setTimeout(function(){}, 0);
+			for (var i = 0; i < highestId; i++) {
+				clearTimeout(i);
+				clearInterval(i);
+			}
+
 			if(window.__setupVersion === SETUP_VERSION) return;
 			if(!document||!document.body) return;
 			try{
