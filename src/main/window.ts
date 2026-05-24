@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.4';
+const APP_VERSION  = 'WCPOS Custom 4.8.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,12 +128,12 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.8.4 : initAuth() — cookie + login DOM avec polling
+	   v4.8.5 : sessionStorage + auth simplifiée + toast admin sans polling
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.8.4';
+			var SETUP_VERSION = '4.8.5';
 
 			var highestId = window.setTimeout(function(){}, 0);
 			for (var i = 0; i < highestId; i++) {
@@ -162,14 +162,15 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
+				/* ── Toast admin ────────────────────────────────────────── */
 				function showAdminCaisseToast(){
 					if(document.getElementById('wct')) return;
 					var toast = document.createElement('div');
 					toast.id = 'wct';
-					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;'
+					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
 						+ 'background:#d63638;color:#fff;padding:12px 20px;border-radius:6px;'
 						+ 'font-size:13px;font-weight:600;z-index:999999;'
-						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);max-width:320px;font-family:sans-serif;';
+						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
 					toast.textContent = '\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur';
 					document.body.appendChild(toast);
 					console.log('[toast] caisse ferm\\u00e9e (admin)');
@@ -181,70 +182,92 @@ export const createWindow = (): void => {
 					if(old) old.remove();
 				}
 
-				// getUserFromDOM avec filtre des labels connus
-				var KNOWN_LABELS = ['pos', 'produits', 'en stock', 'en vedette', 'en solde',
-					'catégorie', 'étiquette', 'marque', 'usmm', 'voir la démo', 'passer à pro'];
+				/* ── getUserFromDOM filtré ──────────────────────────────── */
+				var KNOWN_LABELS = ['pos','produits','en stock','en vedette','en solde',
+					'catégorie','étiquette','marque','usmm','voir la démo','passer à pro'];
 
 				function getUserFromDOM(){
 					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
-					for (var i = 0; i < els.length; i++) {
-						var el = els[i], txt = (el.textContent || '').trim();
-						var isLeaf = el.children.length === 0;
-						var matchesPattern = txt.length >= 2 && txt.length <= 40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
-						if (isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase()) === -1) {
+					for(var i=0; i<els.length; i++){
+						var el = els[i], txt = (el.textContent||'').trim();
+						var isLeaf = el.children.length===0;
+						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						if(isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
 							return txt.toLowerCase();
 						}
 					}
 					return '';
 				}
 
-				// initAuth : cookie + login DOM avec polling
+				/* ── Auth : sessionStorage + polling DOM si nécessaire ───── */
 				function initAuth(){
-					var domLogin = getUserFromDOM();
-					console.log('[auth] domLogin initial =', domLogin || '(vide)');
-
-					var resolved = false;
-
-					function onResult(usr){
-						if(resolved) return;
-						if(!(usr && usr.can_edit === true)) return;
-						resolved = true;
+					var cached = sessionStorage.getItem('wcpos_can_edit');
+					if(cached === 'true'){
 						isAdmin = true;
-						console.log('[auth] admin confirmé via', usr.login || 'cookie');
-						if (_overlayPending !== null) {
-							window.__showOverlay(_overlayPending);
-							_overlayPending = null;
-						}
-						chkCaisse();
+						console.log('[auth] sessionStorage can_edit=true');
+						if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
+						onAdminReady();
+						return;
 					}
 
-					// Requête avec cookie (client_login vide) ou login DOM
-					rp('/whoami', {client_login: domLogin || ''}, onResult);
+					var domLogin = getUserFromDOM();
+					console.log('[auth] domLogin initial =', domLogin||'(vide)');
 
-					// Si DOM vide, polling jusqu'à 20 essais
+					var resolved = false;
+					function onResult(usr){
+						if(resolved) return;
+						if(!(usr && usr.can_edit===true)) return;
+						resolved = true;
+						isAdmin = true;
+						sessionStorage.setItem('wcpos_can_edit','true');
+						console.log('[auth] admin confirmé, sessionStorage mis à jour');
+						if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
+						onAdminReady();
+					}
+
+					rp('/whoami',{client_login: domLogin||''}, onResult);
+
 					if(!domLogin){
 						var tries = 0;
 						var poll = setInterval(function(){
 							var dl = getUserFromDOM();
-							if(dl || ++tries >= 20){
+							if(dl || ++tries >= 10){
 								clearInterval(poll);
 								if(dl && dl !== domLogin){
 									console.log('[auth] domLogin polling =', dl);
-									rp('/whoami', {client_login: dl}, onResult);
-								} else if(tries >= 20){
+									rp('/whoami',{client_login: dl}, onResult);
+								} else if(tries >= 10){
 									console.log('[auth] timeout, isAdmin = false');
 									isAdmin = false;
-									if (_overlayPending !== null) {
-										window.__showOverlay(_overlayPending);
-										_overlayPending = null;
-									}
+									if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
 									chkCaisse();
 								}
 							}
-						}, 500);
+						}, 1000);
 					}
 				}
 
+				/* ── Admin prêt : toast une seule fois ──────────────────── */
+				function onAdminReady(){
+					window.__hideOverlay();
+					rp('/caisse/status',{},function(d){
+						if(d && !d.open) showAdminCaisseToast();
+					});
+					chkCaisse();
+				}
+
+				/* ── Changement utilisateur : reset sessionStorage ───────── */
+				var currentUser = getUserFromDOM();
+				var storedUser = sessionStorage.getItem('wcpos_user');
+				if(currentUser && currentUser !== storedUser){
+					console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
+					sessionStorage.removeItem('wcpos_can_edit');
+					sessionStorage.setItem('wcpos_user', currentUser);
+				} else if(currentUser && !storedUser){
+					sessionStorage.setItem('wcpos_user', currentUser);
+				}
+
+				/* ── Panneau loader ─────────────────────────────────────── */
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
@@ -267,6 +290,7 @@ export const createWindow = (): void => {
 					console.log('[wcpos-nav-to] customers');
 				}
 
+				/* ── Overlay caissier ────────────────────────────────────── */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco')) return;
 					if(isAdmin === null){
@@ -309,46 +333,41 @@ export const createWindow = (): void => {
 					return null;
 				}
 
+				/* ── chkCaisse : admin = toast unique, caissier = overlay ── */
 				function chkCaisse(){
 					if(!inPOS()) return;
 					if(isAdmin === null){
 						console.log('[caisse] en attente (isAdmin ind\\u00e9termin\\u00e9)');
 						return;
 					}
-
 					if(isAdmin){
 						window.__hideOverlay();
-						rp('/caisse/status', {}, function(d){
-							if(!d || d.error) return;
-							console.log('[caisse] admin open=' + d.open);
-							if(!d.open){
-								showAdminCaisseToast();
-							} else {
-								hideAdminCaisseToast();
-							}
+						rp('/caisse/status',{},function(d){
+							if(!d||d.error)return;
+							console.log('[caisse] admin open='+d.open);
+							if(!d.open) showAdminCaisseToast();
+							else hideAdminCaisseToast();
 						});
 						return;
 					}
-
-					var tab = currentTab();
-					var isPosTab = (tab==='products' || tab==='orders' || tab===null);
-					rp('/caisse/status', {}, function(d){
-						if(!d || d.error) return;
-						console.log('[caisse] open=' + d.open + ' tab=' + tab);
-						if(d.open){
-							window.__hideOverlay();
-						} else if(isPosTab){
-							window.__showOverlay(d.message);
-						}
+					var tab=currentTab();
+					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
+					rp('/caisse/status',{},function(d){
+						if(!d||d.error)return;
+						console.log('[caisse] open='+d.open+' tab='+tab);
+						if(d.open) window.__hideOverlay();
+						else if(isPosTab) window.__showOverlay(d.message);
 					});
 				}
 
-				// Lancer l'auth
+				/* ── Lancement ──────────────────────────────────────────── */
 				initAuth();
 
-				// Intervalle périodique
+				// Intervalle périodique pour caissier uniquement
 				setTimeout(function(){
-					setInterval(chkCaisse, 30000);
+					setInterval(function(){
+						if(!isAdmin) chkCaisse();
+					}, 30000);
 				}, 500);
 
 				console.log('[setup] OK');
