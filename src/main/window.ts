@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.5';
+const APP_VERSION  = 'WCPOS Custom 4.8.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -127,33 +127,22 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse / overlay
-	   v4.8.5 : sessionStorage + auth simplifiée + toast admin sans polling
+	   BLOC 2 — Setup caisse
+	   v4.8.6 : Toast unique (admin + caissier) en haut, pas d'overlay
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			var SETUP_VERSION = '4.8.5';
-
-			var highestId = window.setTimeout(function(){}, 0);
-			for (var i = 0; i < highestId; i++) {
-				clearTimeout(i);
-				clearInterval(i);
-			}
-
-			if(window.__setupVersion === SETUP_VERSION) return;
-			if(!document||!document.body) return;
+			if(window.__setup||!document||!document.body)return;
 			try{
 				if(!document.querySelector('[data-testid="search-products"]')){
 					console.log('[setup] hors POS'); return;
 				}
-				window.__setupVersion = SETUP_VERSION;
-				window.__setup = true;
-				console.log('[setup] v' + SETUP_VERSION);
+				window.__setup=true;
+				console.log('[setup] v4.8.6');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
-				var _overlayPending = null;
 
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -162,112 +151,72 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* ── Toast admin ────────────────────────────────────────── */
-				function showAdminCaisseToast(){
-					if(document.getElementById('wct')) return;
+				/* ── Toast caisse ────────────────────────────────────────
+				   Position : haut de l'écran (top:0)
+				   Admin   : rouge "fermée" / vert "ouverte", 10s
+				   Caissier: rouge "fermée" + bouton "Ouvrir", persistant
+				────────────────────────────────────────────────────────── */
+				function showCaisseToast(msg, type, actionLabel, actionFn){
+					var old = document.getElementById('wct');
+					if(old) old.remove();
+
 					var toast = document.createElement('div');
 					toast.id = 'wct';
-					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
-						+ 'background:#d63638;color:#fff;padding:12px 20px;border-radius:6px;'
+					
+					var bgColor = type==='admin_open'   ? '#00a32a' :
+					              type==='admin_closed' ? '#d63638' :
+					              type==='caissier'     ? '#d63638' : '#d63638';
+
+					toast.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);'
+						+ 'background:'+bgColor+';color:#fff;padding:10px 20px;'
 						+ 'font-size:13px;font-weight:600;z-index:999999;'
-						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
-					toast.textContent = '\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur';
+						+ 'box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;'
+						+ 'border-radius:0 0 6px 6px;display:flex;align-items:center;gap:12px;white-space:nowrap;';
+
+					var textSpan = document.createElement('span');
+					textSpan.textContent = msg;
+					toast.appendChild(textSpan);
+
+					if(actionLabel && actionFn){
+						var btn = document.createElement('button');
+						btn.textContent = actionLabel;
+						btn.style.cssText = 'background:#fff;color:'+bgColor+';border:none;'
+							+ 'padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;';
+						btn.addEventListener('click', actionFn);
+						toast.appendChild(btn);
+					}
+
 					document.body.appendChild(toast);
-					console.log('[toast] caisse ferm\\u00e9e (admin)');
-					setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
+					console.log('[toast] ' + type + ': ' + msg);
+
+					if(type==='admin_open' || type==='admin_closed'){
+						setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
+					}
 				}
 
-				function hideAdminCaisseToast(){
+				function hideCaisseToast(){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
 				}
 
-				/* ── getUserFromDOM filtré ──────────────────────────────── */
-				var KNOWN_LABELS = ['pos','produits','en stock','en vedette','en solde',
-					'catégorie','étiquette','marque','usmm','voir la démo','passer à pro'];
-
-				function getUserFromDOM(){
-					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
-					for(var i=0; i<els.length; i++){
-						var el = els[i], txt = (el.textContent||'').trim();
-						var isLeaf = el.children.length===0;
-						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
-						if(isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
-							return txt.toLowerCase();
-						}
-					}
-					return '';
-				}
-
-				/* ── Auth : sessionStorage + polling DOM si nécessaire ───── */
-				function initAuth(){
-					var cached = sessionStorage.getItem('wcpos_can_edit');
-					if(cached === 'true'){
-						isAdmin = true;
-						console.log('[auth] sessionStorage can_edit=true');
-						if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
-						onAdminReady();
-						return;
-					}
-
-					var domLogin = getUserFromDOM();
-					console.log('[auth] domLogin initial =', domLogin||'(vide)');
-
-					var resolved = false;
-					function onResult(usr){
-						if(resolved) return;
-						if(!(usr && usr.can_edit===true)) return;
-						resolved = true;
-						isAdmin = true;
-						sessionStorage.setItem('wcpos_can_edit','true');
-						console.log('[auth] admin confirmé, sessionStorage mis à jour');
-						if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
-						onAdminReady();
-					}
-
-					rp('/whoami',{client_login: domLogin||''}, onResult);
-
-					if(!domLogin){
-						var tries = 0;
-						var poll = setInterval(function(){
-							var dl = getUserFromDOM();
-							if(dl || ++tries >= 10){
-								clearInterval(poll);
-								if(dl && dl !== domLogin){
-									console.log('[auth] domLogin polling =', dl);
-									rp('/whoami',{client_login: dl}, onResult);
-								} else if(tries >= 10){
-									console.log('[auth] timeout, isAdmin = false');
-									isAdmin = false;
-									if(_overlayPending!==null){window.__showOverlay(_overlayPending);_overlayPending=null;}
-									chkCaisse();
-								}
-							}
-						}, 1000);
+				/* ── Auth ──────────────────────────────────────────────── */
+				var domLogin = '';
+				var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+				for(var i=0; i<els.length; i++){
+					var el = els[i], txt = (el.textContent||'').trim();
+					if(el.children.length===0 && txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt)){
+						domLogin = txt.toLowerCase(); break;
 					}
 				}
+				console.log('[setup] domLogin =', domLogin);
 
-				/* ── Admin prêt : toast une seule fois ──────────────────── */
-				function onAdminReady(){
-					window.__hideOverlay();
-					rp('/caisse/status',{},function(d){
-						if(d && !d.open) showAdminCaisseToast();
-					});
+				rp('/whoami',{client_login: domLogin},function(usr){
+					isAdmin = !!(usr && usr.can_edit === true);
+					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
 					chkCaisse();
-				}
+				});
 
-				/* ── Changement utilisateur : reset sessionStorage ───────── */
-				var currentUser = getUserFromDOM();
-				var storedUser = sessionStorage.getItem('wcpos_user');
-				if(currentUser && currentUser !== storedUser){
-					console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
-					sessionStorage.removeItem('wcpos_can_edit');
-					sessionStorage.setItem('wcpos_user', currentUser);
-				} else if(currentUser && !storedUser){
-					sessionStorage.setItem('wcpos_user', currentUser);
-				}
-
-				/* ── Panneau loader ─────────────────────────────────────── */
+				/* ── Panneau loader ───────────────────────────────────── */
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
@@ -290,41 +239,6 @@ export const createWindow = (): void => {
 					console.log('[wcpos-nav-to] customers');
 				}
 
-				/* ── Overlay caissier ────────────────────────────────────── */
-				window.__showOverlay=function(msg){
-					if(document.getElementById('wco')) return;
-					if(isAdmin === null){
-						_overlayPending = msg;
-						console.log('[overlay] en attente (isAdmin ind\\u00e9termin\\u00e9)');
-						return;
-					}
-					if(isAdmin){
-						console.log('[overlay] admin bypass');
-						return;
-					}
-					var ov=document.createElement('div');ov.id='wco';
-					ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(20,42,65,.97);'
-						+'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff';
-					ov.innerHTML='<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
-						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse ferm\\u00e9e</h2>'
-						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||'La caisse est ferm\\u00e9e. Ouvrez-la avant de commencer.')+'</p>'
-						+'<button id="wcb" style="background:#00a32a;color:#fff;border:none;'
-						+'padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
-						+'\\uD83D\\uDD13 Ouvrir la caisse</button>';
-					document.body.appendChild(ov);
-					document.getElementById('wcb').addEventListener('click',function(){
-						ov.remove(); navToClients();
-					});
-					console.log('[overlay] show pour caissier');
-				};
-
-				window.__hideOverlay=function(){
-					var ov=document.getElementById('wco');
-					if(ov){ov.remove();console.log('[overlay] hide');}
-				};
-
 				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
 				function currentTab(){
 					var u=window.location.href.toLowerCase();
@@ -333,41 +247,40 @@ export const createWindow = (): void => {
 					return null;
 				}
 
-				/* ── chkCaisse : admin = toast unique, caissier = overlay ── */
+				/* ── Vérification caisse ──────────────────────────────── */
 				function chkCaisse(){
 					if(!inPOS()) return;
 					if(isAdmin === null){
-						console.log('[caisse] en attente (isAdmin ind\\u00e9termin\\u00e9)');
+						console.log('[caisse] en attente (isAdmin indéterminé)');
 						return;
 					}
-					if(isAdmin){
-						window.__hideOverlay();
-						rp('/caisse/status',{},function(d){
-							if(!d||d.error)return;
-							console.log('[caisse] admin open='+d.open);
-							if(!d.open) showAdminCaisseToast();
-							else hideAdminCaisseToast();
-						});
-						return;
-					}
-					var tab=currentTab();
-					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
+
 					rp('/caisse/status',{},function(d){
-						if(!d||d.error)return;
-						console.log('[caisse] open='+d.open+' tab='+tab);
-						if(d.open) window.__hideOverlay();
-						else if(isPosTab) window.__showOverlay(d.message);
+						if(!d||d.error) return;
+						var tab = currentTab();
+						var isPosTab = (tab==='products'||tab==='orders'||tab===null);
+						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
+
+						if(isAdmin){
+							if(!d.open){
+								showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
+							} else {
+								showCaisseToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
+							}
+						} else if(isPosTab){
+							if(!d.open){
+								showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 veuillez l\\'ouvrir', 'caissier',
+									'\\uD83D\\uDD13 Ouvrir', function(){ navToClients(); });
+							} else {
+								hideCaisseToast();
+							}
+						}
 					});
 				}
 
-				/* ── Lancement ──────────────────────────────────────────── */
-				initAuth();
-
-				// Intervalle périodique pour caissier uniquement
 				setTimeout(function(){
-					setInterval(function(){
-						if(!isAdmin) chkCaisse();
-					}, 30000);
+					chkCaisse();
+					setInterval(chkCaisse, 30000);
 				}, 500);
 
 				console.log('[setup] OK');
