@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.7';
+const APP_VERSION  = 'WCPOS Custom 4.8.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.8.7 : Auth optimale (polling DOM + sessionStorage) + toast haut
+	   v4.8.8 : getUserFromDOM avec filtre text-base + KNOWN_LABELS
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.8.7');
+				console.log('[setup] v4.8.8');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -195,12 +195,26 @@ export const createWindow = (): void => {
 					if(old) old.remove();
 				}
 
-				/* ── getUserFromDOM filtré ──────────────────────────────── */
-				var KNOWN_LABELS = ['pos','produits','en stock','en vedette','en solde',
-					'catégorie','étiquette','marque','usmm','voir la démo','passer à pro'];
+				/* ── getUserFromDOM filtré (text-base + KNOWN_LABELS) ───── */
+				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
+					'en stock','en vedette','en solde','catégorie','étiquette','marque',
+					'usmm','voir la démo','passer à pro','wcpos',
+					'pos - usm malakoff tir sportif','version 1.8.11'];
 
 				function getUserFromDOM(){
 					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+					// Priorité 1 : text-base + feuille + motif
+					for(var i=0; i<els.length; i++){
+						var el = els[i], txt = (el.textContent||'').trim();
+						var cls = el.className || '';
+						var isLeaf = el.children.length===0;
+						var hasTextBase = cls.indexOf('text-base') > -1;
+						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						if(isLeaf && matchesPattern && hasTextBase && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
+							return txt.toLowerCase();
+						}
+					}
+					// Priorité 2 : sans text-base mais filtré par KNOWN_LABELS
 					for(var i=0; i<els.length; i++){
 						var el = els[i], txt = (el.textContent||'').trim();
 						var isLeaf = el.children.length===0;
