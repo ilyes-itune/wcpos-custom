@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.3';
+const APP_VERSION  = 'WCPOS Custom 4.7.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.3 : getUserFromDOM + toast admin état
+	   v4.7.4 : getUserFromDOM + toast admin état + chkCaisse après auth
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.7.3');
+				console.log('[setup] v4.7.4');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
@@ -197,6 +197,8 @@ export const createWindow = (): void => {
 						window.__showOverlay(_overlayPending);
 						_overlayPending = null;
 					}
+					/* Vérification immédiate après auth */
+					chkCaisse();
 				});
 
 				window.__loadPanel=function(pid,wrap,cv,force){
@@ -265,6 +267,11 @@ export const createWindow = (): void => {
 
 				function chkCaisse(){
 					if(!inPOS()) return;
+					/* Attendre que isAdmin soit déterminé */
+					if(isAdmin === null){
+						console.log('[caisse] en attente (isAdmin ind\\u00e9termin\\u00e9)');
+						return;
+					}
 					if(isAdmin){
 						window.__hideOverlay();
 						rp('/caisse/status',{},function(d){
@@ -285,6 +292,7 @@ export const createWindow = (): void => {
 					});
 				}
 
+				/* Premier appel différé + intervalle périodique */
 				setTimeout(function(){
 					chkCaisse();
 					setInterval(chkCaisse, 30000);
