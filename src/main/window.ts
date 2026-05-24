@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.4';
+const APP_VERSION  = 'WCPOS Custom 4.7.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.4 : getUserFromDOM + toast admin état + chkCaisse après auth
+	   v4.7.5 : Toast admin réaffiché à chaque vérification périodique
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,12 +139,11 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.7.4');
+				console.log('[setup] v4.7.5');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
 				var _overlayPending = null;
-				var _lastCaisseState = null;
 
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -153,12 +152,12 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* Toast admin : couleur selon état, 10 secondes */
+				/* Toast admin : couleur selon état, 10 secondes, réaffiché à chaque appel */
 				function showAdminCaisseToast(isOpen){
-					if(_lastCaisseState === isOpen) return;
-					_lastCaisseState = isOpen;
+					// Supprimer le toast précédent s'il existe
 					var old = document.getElementById('wct');
 					if(old) old.remove();
+
 					var toast = document.createElement('div');
 					toast.id = 'wct';
 					if(isOpen){
@@ -170,6 +169,7 @@ export const createWindow = (): void => {
 					}
 					document.body.appendChild(toast);
 					console.log('[toast] admin: ' + (isOpen ? 'ouverte' : 'fermee'));
+					// Disparition après 10 secondes
 					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
