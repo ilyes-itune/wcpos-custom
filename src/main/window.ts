@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.6';
+const APP_VERSION  = 'WCPOS Custom 4.7.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,18 +128,21 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.6 : Toast admin réaffiché à chaque vérification périodique
+	   v4.7.7 : Flag versionné __setupVersion pour forcer réexécution après màj
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
-			if(window.__setup||!document||!document.body)return;
+			var SETUP_VERSION = '4.7.7';
+			if(window.__setupVersion === SETUP_VERSION) return;
+			if(!document||!document.body) return;
 			try{
 				if(!document.querySelector('[data-testid="search-products"]')){
 					console.log('[setup] hors POS'); return;
 				}
-				window.__setup=true;
-				console.log('[setup] v4.7.6');
+				window.__setupVersion = SETUP_VERSION;
+				window.__setup = true;
+				console.log('[setup] v' + SETUP_VERSION);
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
