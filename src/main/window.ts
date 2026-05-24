@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.0';
+const APP_VERSION  = 'WCPOS Custom 4.9.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,6 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.0 : toast en bas à droite + auth text-base + maximize recalcul
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +138,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.0');
+				console.log('[setup] v4.9.1');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -151,7 +150,6 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* ── Toast caisse (bas à droite) ────────────────────────── */
 				function showCaisseToast(msg, type, actionLabel, actionFn){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
@@ -195,7 +193,6 @@ export const createWindow = (): void => {
 					if(old) old.remove();
 				}
 
-				/* ── getUserFromDOM filtré (text-base + KNOWN_LABELS) ───── */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
 					'usmm','voir la démo','passer à pro','wcpos',
@@ -224,7 +221,6 @@ export const createWindow = (): void => {
 					return '';
 				}
 
-				/* ── Auth optimale : polling DOM + sessionStorage ────────── */
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
 					if(cached === 'true'){
@@ -274,7 +270,6 @@ export const createWindow = (): void => {
 					}, 500);
 				}
 
-				/* ── Panneau loader ───────────────────────────────────── */
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
@@ -305,7 +300,6 @@ export const createWindow = (): void => {
 					return null;
 				}
 
-				/* ── Vérification caisse ──────────────────────────────── */
 				function chkCaisse(){
 					if(!inPOS()) return;
 
@@ -332,7 +326,6 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Lancement ──────────────────────────────────────────── */
 				initAuth(function(result){
 					isAdmin = result;
 					console.log('[auth] résultat final: isAdmin=' + isAdmin);
@@ -350,7 +343,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.0 : navLeft fixe 56px + dimensions screen.avail en fallback
+	   v4.9.1 : Détection par "WooCommerce POS Pro" (indépendant résolution)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -363,20 +356,11 @@ export const createWindow = (): void => {
 			return;
 		}
 
-		const PT: Record<string,string> = {
-			products:  'ajustez les prix',
-			orders:    'imprimez les',
-			customers: 'ajoutez de nouveaux clients',
-			reports:   'bloquez les rapports',
-		};
-		const sig = PT[tab];
-		if (!sig) return;
 		log.info(`[panel] → ${tab}`);
 
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
-				var sig=${JSON.stringify(sig)}.toLowerCase();
 				if(!document.querySelector('[data-testid="search-products"]')){
 					console.log('[panel] hors POS'); return;
 				}
@@ -389,42 +373,31 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				// v4.9.0 : fallback sur screen.avail si window.innerWidth trop petit
-				var W = Math.max(window.innerWidth, (screen.availWidth||1024) * 0.5);
-				var H = Math.max(window.innerHeight, (screen.availHeight||728) * 0.5);
-				var best=null, bestScore=0, checked=0;
-
-				document.querySelectorAll('div,section,aside').forEach(function(el){
-					if(el.id==='wpp')return;
-					if((el.textContent||'').toLowerCase().indexOf(sig)===-1)return;
-					var childHas=false;
-					for(var i=0;i<el.children.length;i++){
-						if((el.children[i].textContent||'').toLowerCase().indexOf(sig)!==-1){
-							childHas=true; break;
-						}
+				// v4.9.1 : Chercher "WooCommerce POS Pro" → remonter au conteneur
+				var proContainer = null;
+				var allLeafs = document.querySelectorAll('*');
+				for(var i=0; i<allLeafs.length; i++){
+					var el = allLeafs[i];
+					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
+						// Remonter de 2 niveaux pour trouver le conteneur flex-1
+						proContainer = el.parentElement?.parentElement;
+						break;
 					}
-					if(childHas)return;
-					checked++;
-					var r=el.getBoundingClientRect();
-					if(r.width<W*0.15||r.height<H*0.05)return;
-					if(r.x===0&&r.width>W*0.85)return;
-					if(r.x>W*0.75||r.width<W*0.20)return;
-					var score=r.width*r.height;
-					if(score>bestScore){
-						bestScore=score; best={el:el,r:r};
-						console.log('[panel] candidat tab='+tab
-							+' x='+Math.round(r.x)+' w='+Math.round(r.width)+' h='+Math.round(r.height));
-					}
-				});
+				}
 
-				console.log('[panel] checked='+checked+' found='+(best?'OUI':'NON'));
-
-				if(!best){
-					if(wpp)wpp.style.setProperty('display','none','important');
+				if(!proContainer){
+					console.log('[panel] conteneur Pro introuvable');
+					if(wpp) wpp.style.setProperty('display','none','important');
 					return;
 				}
 
-				// v4.9.0 : navLeft fixe 56px avec fallback détection
+				var r = proContainer.getBoundingClientRect();
+				console.log('[panel] conteneur Pro: '+Math.round(r.width)+'x'+Math.round(r.height)+' x:'+Math.round(r.x)+' y:'+Math.round(r.y));
+
+				// Masquer le contenu Pro
+				proContainer.innerHTML = '';
+
+				// Calculer navLeft et hdrBottom
 				var navLeft = 56;
 				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
 				         '[class*="sidebar"]','nav[class]'];
@@ -435,29 +408,24 @@ export const createWindow = (): void => {
 					}
 				}
 
-				var hdrBottom=(function(){
-					var maxB=0;
-					document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],'
-						+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
-						+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
-					.forEach(function(e3){
-						var r3=e3.getBoundingClientRect();
-						if(r3.top<=5&&r3.width>W*0.5&&r3.height>10&&r3.height<200)
-							if(Math.round(r3.bottom)>maxB)maxB=Math.round(r3.bottom);
-					});
-					return maxB>0?maxB:50;
-				})();
+				var hdrBottom=50;
+				document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],'
+					+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
+					+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
+				.forEach(function(e3){
+					var r3=e3.getBoundingClientRect();
+					if(r3.top<=5&&r3.width>window.innerWidth*0.5&&r3.height>10&&r3.height<200)
+						if(Math.round(r3.bottom)>hdrBottom)hdrBottom=Math.round(r3.bottom);
+				});
 
 				console.log('[panel] navLeft='+navLeft+' hdrBottom='+hdrBottom);
 
-				if(wpp)wpp.remove();
+				if(wpp) wpp.remove();
 				var w=document.createElement('div');
 				w.id='wpp'; w.setAttribute('data-pid',tab);
-				w.style.cssText='position:fixed'
-					+';top:'+hdrBottom+'px;left:'+navLeft+'px;right:0;bottom:0'
-					+';z-index:50;background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
-				document.body.appendChild(w);
-				best.el.style.setProperty('visibility','hidden','important');
+				w.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;'
+					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
+				proContainer.appendChild(w);
 				window.__loadPanel(tab,w,null,true);
 			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
@@ -505,7 +473,6 @@ export const createWindow = (): void => {
 		if (++pollCount >= 10) clearInterval(pollTimer);
 	}, 2000);
 
-	// v4.9.0 : maximize + recalcul après affichage
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
 		if (process.env.START_MINIMIZED) {
