@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.7.5';
+const APP_VERSION  = 'WCPOS Custom 4.7.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.5 : Toast admin réaffiché à chaque vérification périodique
+	   v4.7.6 : Toast admin réaffiché à chaque vérification périodique
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.7.5');
+				console.log('[setup] v4.7.6');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = null;
@@ -152,9 +152,7 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* Toast admin : couleur selon état, 10 secondes, réaffiché à chaque appel */
 				function showAdminCaisseToast(isOpen){
-					// Supprimer le toast précédent s'il existe
 					var old = document.getElementById('wct');
 					if(old) old.remove();
 
@@ -169,11 +167,9 @@ export const createWindow = (): void => {
 					}
 					document.body.appendChild(toast);
 					console.log('[toast] admin: ' + (isOpen ? 'ouverte' : 'fermee'));
-					// Disparition après 10 secondes
 					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
-				/* Récupération du login depuis le DOM WCPOS */
 				var domLogin = '';
 				var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
 				for(var i=0; i<els.length; i++){
@@ -184,7 +180,6 @@ export const createWindow = (): void => {
 				}
 				console.log('[setup] domLogin =', domLogin);
 
-				/* Auth admin */
 				rp('/whoami',{client_login: domLogin},function(usr){
 					isAdmin = !!(usr && usr.can_edit === true);
 					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
@@ -197,7 +192,6 @@ export const createWindow = (): void => {
 						window.__showOverlay(_overlayPending);
 						_overlayPending = null;
 					}
-					/* Vérification immédiate après auth */
 					chkCaisse();
 				});
 
@@ -267,7 +261,6 @@ export const createWindow = (): void => {
 
 				function chkCaisse(){
 					if(!inPOS()) return;
-					/* Attendre que isAdmin soit déterminé */
 					if(isAdmin === null){
 						console.log('[caisse] en attente (isAdmin ind\\u00e9termin\\u00e9)');
 						return;
@@ -292,7 +285,6 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* Premier appel différé + intervalle périodique */
 				setTimeout(function(){
 					chkCaisse();
 					setInterval(chkCaisse, 30000);
