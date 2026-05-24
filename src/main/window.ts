@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POS USMM 4.7.1';
+const APP_VERSION  = 'WCPOS Custom 4.7.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse / overlay
-	   v4.7.1 : Toast admin avec état (ouvert/fermé), couleur et durée 10s
+	   v4.7.2 : Correction régression overlay admin + toast état
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,10 +139,11 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.7.1 - toast admin avec état');
+				console.log('[setup] v4.7.2');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
-				var isAdmin = false;
+				var isAdmin = null;
+				var _overlayPending = null;
 				var _lastCaisseState = null;
 
 				function rp(ep,data,cb){
@@ -152,17 +153,14 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* Toast admin : couleur selon état, 10 secondes, récurrent si changement */
+				/* Toast admin : couleur selon état, 10 secondes */
 				function showAdminCaisseToast(isOpen){
 					if(_lastCaisseState === isOpen) return;
 					_lastCaisseState = isOpen;
-
 					var old = document.getElementById('wct');
 					if(old) old.remove();
-
 					var toast = document.createElement('div');
 					toast.id = 'wct';
-
 					if(isOpen){
 						toast.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#00a32a; color:#fff; padding:12px 20px; border-radius:6px; font-size:13px; font-weight:600; z-index:999999; box-shadow:0 4px 12px rgba(0,0,0,.15); max-width:320px; font-family:sans-serif;';
 						toast.textContent = '\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur';
@@ -170,24 +168,24 @@ export const createWindow = (): void => {
 						toast.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#d63638; color:#fff; padding:12px 20px; border-radius:6px; font-size:13px; font-weight:600; z-index:999999; box-shadow:0 4px 12px rgba(0,0,0,.15); max-width:320px; font-family:sans-serif;';
 						toast.textContent = '\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur';
 					}
-
 					document.body.appendChild(toast);
 					console.log('[toast] admin: ' + (isOpen ? 'ouverte' : 'fermee'));
-
-					setTimeout(function(){
-						if(toast && toast.remove) toast.remove();
-					}, 10000);
+					setTimeout(function(){ if(toast && toast.remove) toast.remove(); }, 10000);
 				}
 
-				/* Détermination du rôle admin */
+				/* Auth admin */
 				rp('/whoami',{client_login:''},function(usr){
 					isAdmin = !!(usr && usr.can_edit === true);
 					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
-
 					if(isAdmin){
 						rp('/caisse/status',{},function(d){
 							if(d) showAdminCaisseToast(!!d.open);
 						});
+					}
+					// Traiter l'overlay en attente
+					if(_overlayPending !== null){
+						window.__showOverlay(_overlayPending);
+						_overlayPending = null;
 					}
 				});
 
@@ -213,10 +211,15 @@ export const createWindow = (): void => {
 					console.log('[wcpos-nav-to] customers');
 				}
 
-				/* Overlay bloquant pour caissier */
+				/* Overlay — ne s'affiche que si isAdmin est déterminé ET faux */
 				window.__showOverlay=function(msg){
 					if(document.getElementById('wco')) return;
-					if(isAdmin) {
+					if(isAdmin === null){
+						_overlayPending = msg;
+						console.log('[overlay] en attente (isAdmin ind\\u00e9termin\\u00e9)');
+						return;
+					}
+					if(isAdmin){
 						console.log('[overlay] admin bypass');
 						return;
 					}
@@ -253,15 +256,13 @@ export const createWindow = (): void => {
 
 				function chkCaisse(){
 					if(!inPOS()) return;
-
-					if(isAdmin) {
+					if(isAdmin){
 						window.__hideOverlay();
 						rp('/caisse/status',{},function(d){
 							if(d) showAdminCaisseToast(!!d.open);
 						});
 						return;
 					}
-
 					var tab=currentTab();
 					var isPosTab=(tab==='products'||tab==='orders'||tab===null);
 					rp('/caisse/status',{},function(d){
