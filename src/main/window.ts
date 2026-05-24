@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.9';
+const APP_VERSION  = 'WCPOS Custom 4.9.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.8.9 : maximize() au démarrage + getUserFromDOM avec text-base
+	   v4.9.0 : toast en bas à droite + auth text-base + maximize recalcul
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.8.9');
+				console.log('[setup] v4.9.0');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -151,7 +151,7 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* ── Toast caisse ──────────────────────────────────────── */
+				/* ── Toast caisse (bas à droite) ────────────────────────── */
 				function showCaisseToast(msg, type, actionLabel, actionFn){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
@@ -163,11 +163,10 @@ export const createWindow = (): void => {
 					              type==='admin_closed' ? '#d63638' :
 					              type==='caissier'     ? '#d63638' : '#d63638';
 
-					toast.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);'
-						+ 'background:'+bgColor+';color:#fff;padding:10px 20px;'
+					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
+						+ 'background:'+bgColor+';color:#fff;padding:12px 20px;border-radius:6px;'
 						+ 'font-size:13px;font-weight:600;z-index:999999;'
-						+ 'box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;'
-						+ 'border-radius:0 0 6px 6px;display:flex;align-items:center;gap:12px;white-space:nowrap;';
+						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
 
 					var textSpan = document.createElement('span');
 					textSpan.textContent = msg;
@@ -177,9 +176,10 @@ export const createWindow = (): void => {
 						var btn = document.createElement('button');
 						btn.textContent = actionLabel;
 						btn.style.cssText = 'background:#fff;color:'+bgColor+';border:none;'
-							+ 'padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;';
+							+ 'padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;margin-left:12px;';
 						btn.addEventListener('click', actionFn);
 						toast.appendChild(btn);
+						toast.style.cssText = toast.style.cssText.replace('max-width:320px','max-width:420px');
 					}
 
 					document.body.appendChild(toast);
@@ -203,7 +203,6 @@ export const createWindow = (): void => {
 
 				function getUserFromDOM(){
 					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
-					// Priorité 1 : text-base + feuille + motif
 					for(var i=0; i<els.length; i++){
 						var el = els[i], txt = (el.textContent||'').trim();
 						var cls = el.className || '';
@@ -214,7 +213,6 @@ export const createWindow = (): void => {
 							return txt.toLowerCase();
 						}
 					}
-					// Priorité 2 : sans text-base mais filtré par KNOWN_LABELS
 					for(var i=0; i<els.length; i++){
 						var el = els[i], txt = (el.textContent||'').trim();
 						var isLeaf = el.children.length===0;
@@ -352,6 +350,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
+	   v4.9.0 : navLeft fixe 56px + dimensions screen.avail en fallback
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -390,7 +389,9 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				var W=window.innerWidth, H=window.innerHeight;
+				// v4.9.0 : fallback sur screen.avail si window.innerWidth trop petit
+				var W = Math.max(window.innerWidth, (screen.availWidth||1024) * 0.5);
+				var H = Math.max(window.innerHeight, (screen.availHeight||728) * 0.5);
 				var best=null, bestScore=0, checked=0;
 
 				document.querySelectorAll('div,section,aside').forEach(function(el){
@@ -423,16 +424,16 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				var navLeft=(function(){
-					var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
-					         '[class*="sidebar"]','nav[class]'];
-					for(var i=0;i<sel.length;i++){
-						var e2=document.querySelector(sel[i]);
-						if(e2){var r2=e2.getBoundingClientRect();
-							if(r2.left===0&&r2.width>0&&r2.width<W*0.15)return Math.round(r2.right);}
+				// v4.9.0 : navLeft fixe 56px avec fallback détection
+				var navLeft = 56;
+				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
+				         '[class*="sidebar"]','nav[class]'];
+				for(var i=0;i<sel.length;i++){
+					var e2=document.querySelector(sel[i]);
+					if(e2){var r2=e2.getBoundingClientRect();
+						if(r2.left===0&&r2.width>0&&r2.width<200){navLeft=Math.round(r2.right);break;}
 					}
-					return best.r.left<W*0.30?Math.round(best.r.left):55;
-				})();
+				}
 
 				var hdrBottom=(function(){
 					var maxB=0;
@@ -504,10 +505,20 @@ export const createWindow = (): void => {
 		if (++pollCount >= 10) clearInterval(pollTimer);
 	}, 2000);
 
+	// v4.9.0 : maximize + recalcul après affichage
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
-		mainWindow.maximize();  // v4.8.9 : plein écran au démarrage
-		if (process.env.START_MINIMIZED) mainWindow.minimize(); else mainWindow.show();
+		if (process.env.START_MINIMIZED) {
+			mainWindow.minimize();
+			mainWindow.show();
+		} else {
+			mainWindow.maximize();
+			mainWindow.show();
+			setTimeout(() => {
+				lastTab = null;
+				onNavigate('ready-maximized');
+			}, 800);
+		}
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
