@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.8';
+const APP_VERSION  = 'WCPOS Custom 4.8.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.8.8 : getUserFromDOM avec filtre text-base + KNOWN_LABELS
+	   v4.8.9 : maximize() au démarrage + getUserFromDOM avec text-base
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.8.8');
+				console.log('[setup] v4.8.9');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -506,6 +506,7 @@ export const createWindow = (): void => {
 
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
+		mainWindow.maximize();  // v4.8.9 : plein écran au démarrage
 		if (process.env.START_MINIMIZED) mainWindow.minimize(); else mainWindow.show();
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
