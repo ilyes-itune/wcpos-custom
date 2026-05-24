@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.8.6';
+const APP_VERSION  = 'WCPOS Custom 4.8.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.8.6 : Toast unique (admin + caissier) en haut, pas d'overlay
+	   v4.8.7 : Auth optimale (polling DOM + sessionStorage) + toast haut
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,10 +139,10 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.8.6');
+				console.log('[setup] v4.8.7');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
-				var isAdmin = null;
+				var isAdmin = false;
 
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -151,11 +151,7 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* ── Toast caisse ────────────────────────────────────────
-				   Position : haut de l'écran (top:0)
-				   Admin   : rouge "fermée" / vert "ouverte", 10s
-				   Caissier: rouge "fermée" + bouton "Ouvrir", persistant
-				────────────────────────────────────────────────────────── */
+				/* ── Toast caisse ──────────────────────────────────────── */
 				function showCaisseToast(msg, type, actionLabel, actionFn){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
@@ -199,22 +195,72 @@ export const createWindow = (): void => {
 					if(old) old.remove();
 				}
 
-				/* ── Auth ──────────────────────────────────────────────── */
-				var domLogin = '';
-				var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
-				for(var i=0; i<els.length; i++){
-					var el = els[i], txt = (el.textContent||'').trim();
-					if(el.children.length===0 && txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt)){
-						domLogin = txt.toLowerCase(); break;
+				/* ── getUserFromDOM filtré ──────────────────────────────── */
+				var KNOWN_LABELS = ['pos','produits','en stock','en vedette','en solde',
+					'catégorie','étiquette','marque','usmm','voir la démo','passer à pro'];
+
+				function getUserFromDOM(){
+					var els = document.querySelectorAll('[class*="whitespace-nowrap"]');
+					for(var i=0; i<els.length; i++){
+						var el = els[i], txt = (el.textContent||'').trim();
+						var isLeaf = el.children.length===0;
+						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						if(isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
+							return txt.toLowerCase();
+						}
+					}
+					return '';
+				}
+
+				/* ── Auth optimale : polling DOM + sessionStorage ────────── */
+				function initAuth(callback){
+					var cached = sessionStorage.getItem('wcpos_can_edit');
+					if(cached === 'true'){
+						console.log('[auth] sessionStorage can_edit=true');
+						callback(true);
+						return;
+					}
+
+					var domLogin = getUserFromDOM();
+					if(domLogin){
+						console.log('[auth] domLogin =', domLogin);
+						rp('/whoami', {client_login: domLogin}, function(usr){
+							if(usr && usr.can_edit===true){
+								sessionStorage.setItem('wcpos_can_edit', 'true');
+								callback(true);
+							} else {
+								startPolling(callback);
+							}
+						});
+					} else {
+						startPolling(callback);
 					}
 				}
-				console.log('[setup] domLogin =', domLogin);
 
-				rp('/whoami',{client_login: domLogin},function(usr){
-					isAdmin = !!(usr && usr.can_edit === true);
-					console.log('[setup] can_edit =', isAdmin, 'roles:', usr?.roles);
-					chkCaisse();
-				});
+				function startPolling(callback){
+					var tries = 0;
+					var maxTries = 20;
+					console.log('[auth] polling DOM...');
+					var poll = setInterval(function(){
+						tries++;
+						var dl = getUserFromDOM();
+						if(dl){
+							console.log('[auth] polling trouvé =', dl, '(tentative '+tries+')');
+							rp('/whoami', {client_login: dl}, function(usr){
+								if(usr && usr.can_edit===true){
+									clearInterval(poll);
+									sessionStorage.setItem('wcpos_can_edit', 'true');
+									callback(true);
+								}
+							});
+						}
+						if(tries >= maxTries){
+							clearInterval(poll);
+							console.log('[auth] timeout, can_edit=false');
+							callback(false);
+						}
+					}, 500);
+				}
 
 				/* ── Panneau loader ───────────────────────────────────── */
 				window.__loadPanel=function(pid,wrap,cv,force){
@@ -250,10 +296,6 @@ export const createWindow = (): void => {
 				/* ── Vérification caisse ──────────────────────────────── */
 				function chkCaisse(){
 					if(!inPOS()) return;
-					if(isAdmin === null){
-						console.log('[caisse] en attente (isAdmin indéterminé)');
-						return;
-					}
 
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error) return;
@@ -278,10 +320,16 @@ export const createWindow = (): void => {
 					});
 				}
 
-				setTimeout(function(){
+				/* ── Lancement ──────────────────────────────────────────── */
+				initAuth(function(result){
+					isAdmin = result;
+					console.log('[auth] résultat final: isAdmin=' + isAdmin);
 					chkCaisse();
-					setInterval(chkCaisse, 30000);
-				}, 500);
+				});
+
+				setInterval(function(){
+					if(isAdmin) chkCaisse();
+				}, 30000);
 
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
