@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.1';
+const APP_VERSION  = 'WCPOS Custom 4.9.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -138,7 +138,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.1');
+				console.log('[setup] v4.9.2');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -343,7 +343,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.1 : Détection par "WooCommerce POS Pro" (indépendant résolution)
+	   v4.9.2 : Détection par "WooCommerce POS Pro" + correction hauteur
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -373,13 +373,12 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				// v4.9.1 : Chercher "WooCommerce POS Pro" → remonter au conteneur
+				// v4.9.2 : Chercher "WooCommerce POS Pro" → remonter au conteneur
 				var proContainer = null;
 				var allLeafs = document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
 					var el = allLeafs[i];
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
-						// Remonter de 2 niveaux pour trouver le conteneur flex-1
 						proContainer = el.parentElement?.parentElement;
 						break;
 					}
@@ -394,15 +393,30 @@ export const createWindow = (): void => {
 				var r = proContainer.getBoundingClientRect();
 				console.log('[panel] conteneur Pro: '+Math.round(r.width)+'x'+Math.round(r.height)+' x:'+Math.round(r.x)+' y:'+Math.round(r.y));
 
-				// Masquer le contenu Pro
-				proContainer.innerHTML = '';
+				// Masquer le contenu Pro (enfants directs)
+				for(var j=0; j<proContainer.children.length; j++){
+					proContainer.children[j].style.display = 'none';
+				}
+
+				// Forcer la hauteur du conteneur
+				proContainer.style.minHeight = '400px';
+				proContainer.style.overflow = 'visible';
+
+				// Corriger les parents avec overflow:hidden
+				var p = proContainer.parentElement;
+				while(p && p !== document.body){
+					if(window.getComputedStyle(p).overflow === 'hidden'){
+						p.style.overflow = 'visible';
+					}
+					p = p.parentElement;
+				}
 
 				// Calculer navLeft et hdrBottom
 				var navLeft = 56;
 				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
 				         '[class*="sidebar"]','nav[class]'];
-				for(var i=0;i<sel.length;i++){
-					var e2=document.querySelector(sel[i]);
+				for(var k=0;k<sel.length;k++){
+					var e2=document.querySelector(sel[k]);
 					if(e2){var r2=e2.getBoundingClientRect();
 						if(r2.left===0&&r2.width>0&&r2.width<200){navLeft=Math.round(r2.right);break;}
 					}
@@ -423,8 +437,8 @@ export const createWindow = (): void => {
 				if(wpp) wpp.remove();
 				var w=document.createElement('div');
 				w.id='wpp'; w.setAttribute('data-pid',tab);
-				w.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;'
-					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box';
+				w.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;'
+					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
 				proContainer.appendChild(w);
 				window.__loadPanel(tab,w,null,true);
 			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
