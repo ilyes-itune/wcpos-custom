@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.8';
+const APP_VERSION  = 'WCPOS Custom 4.9.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.8 : Overlay caissier (zone contenu uniquement) + toast admin
+	   v4.9.9 : Overlay caissier (zone contenu) + toast admin + POS_TABS
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,10 +139,13 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.8');
+				console.log('[setup] v4.9.9');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
+
+				// Onglets où l'overlay caissier s'affiche (modifiable)
+				var POS_TABS = ['products', 'orders'];
 
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -191,14 +194,8 @@ export const createWindow = (): void => {
 					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
 						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2>'
 						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||'La caisse est fermée. Ouvrez-la avant de commencer.')+'</p>'
-						+'<button id="wco-btn" style="background:#00a32a;color:#fff;border:none;padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
-						+'🔓 Ouvrir la caisse</button>';
+						+(msg||'La caisse est fermée. Veuillez l\\'ouvrir avant de continuer.')+'</p>';
 					document.body.appendChild(ov);
-					document.getElementById('wco-btn').addEventListener('click', function(){
-						ov.remove();
-						console.log('[wcpos-nav-to] customers');
-					});
 					console.log('[overlay] caissier');
 				}
 
@@ -300,7 +297,7 @@ export const createWindow = (): void => {
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error) return;
 						var tab = currentTab();
-						var isPosTab = (tab==='products'||tab==='orders'||tab===null);
+						var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab===null);
 						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
 						if(isAdmin){
 							hideCaissierOverlay();
