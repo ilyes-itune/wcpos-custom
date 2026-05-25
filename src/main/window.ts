@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.2';
+const APP_VERSION  = 'WCPOS Custom 5.0.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -107,6 +107,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 1 — Anti-pub
+	   v5.0.3 : Traduction Customers → Caisse via i18next
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -122,6 +123,13 @@ export const createWindow = (): void => {
 				s.textContent=${JSON.stringify(css)};
 				(document.head||document.documentElement).appendChild(s);
 				console.log('[ap] OK');
+
+				// v5.0.3 : Traduction Customers → Caisse via i18next
+				if(window.i18next){
+					window.i18next.addResourceBundle('fr_FR', 'translation',
+						{'common.customers': 'Caisse'}, true, true);
+					console.log('[ap] i18next customers → Caisse');
+				}
 			}catch(e){console.error('[ap]',e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
@@ -141,7 +149,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.2');
+				console.log('[setup] v5.0.3');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -401,6 +409,7 @@ export const createWindow = (): void => {
 		const tab = tabFromUrl(currentUrl);
 		log.info(`[${label}] url=${currentUrl} tab=${tab}`);
 		runAntiPro(); runSetup();
+		// v5.0.1 : mise à jour immédiate de l'overlay après navigation
 		triggerChkCaisse();
 		if (tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 	}
@@ -413,6 +422,7 @@ export const createWindow = (): void => {
 		const url = mainWindow.webContents.getURL(); const tab = tabFromUrl(url);
 		log.info(`[poll ${pollCount+1}/10] url=${url} tab=${tab}`);
 		runAntiPro(); runSetup();
+		// v5.0.1 : mise à jour immédiate de l'overlay pendant la phase de polling
 		triggerChkCaisse();
 		if (tab && tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 		if (++pollCount >= 10) clearInterval(pollTimer);
