@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.2';
+const APP_VERSION  = 'WCPOS Custom 4.9.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -138,7 +138,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.2');
+				console.log('[setup] v4.9.3');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -153,23 +153,18 @@ export const createWindow = (): void => {
 				function showCaisseToast(msg, type, actionLabel, actionFn){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
-
 					var toast = document.createElement('div');
 					toast.id = 'wct';
-					
 					var bgColor = type==='admin_open'   ? '#00a32a' :
 					              type==='admin_closed' ? '#d63638' :
 					              type==='caissier'     ? '#d63638' : '#d63638';
-
 					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
 						+ 'background:'+bgColor+';color:#fff;padding:12px 20px;border-radius:6px;'
 						+ 'font-size:13px;font-weight:600;z-index:999999;'
 						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
-
 					var textSpan = document.createElement('span');
 					textSpan.textContent = msg;
 					toast.appendChild(textSpan);
-
 					if(actionLabel && actionFn){
 						var btn = document.createElement('button');
 						btn.textContent = actionLabel;
@@ -179,19 +174,14 @@ export const createWindow = (): void => {
 						toast.appendChild(btn);
 						toast.style.cssText = toast.style.cssText.replace('max-width:320px','max-width:420px');
 					}
-
 					document.body.appendChild(toast);
 					console.log('[toast] ' + type + ': ' + msg);
-
 					if(type==='admin_open' || type==='admin_closed'){
 						setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
 					}
 				}
 
-				function hideCaisseToast(){
-					var old = document.getElementById('wct');
-					if(old) old.remove();
-				}
+				function hideCaisseToast(){ var old = document.getElementById('wct'); if(old) old.remove(); }
 
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
@@ -223,31 +213,19 @@ export const createWindow = (): void => {
 
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
-					if(cached === 'true'){
-						console.log('[auth] sessionStorage can_edit=true');
-						callback(true);
-						return;
-					}
-
+					if(cached === 'true'){ console.log('[auth] sessionStorage can_edit=true'); callback(true); return; }
 					var domLogin = getUserFromDOM();
 					if(domLogin){
 						console.log('[auth] domLogin =', domLogin);
 						rp('/whoami', {client_login: domLogin}, function(usr){
-							if(usr && usr.can_edit===true){
-								sessionStorage.setItem('wcpos_can_edit', 'true');
-								callback(true);
-							} else {
-								startPolling(callback);
-							}
+							if(usr && usr.can_edit===true){ sessionStorage.setItem('wcpos_can_edit', 'true'); callback(true); }
+							else { startPolling(callback); }
 						});
-					} else {
-						startPolling(callback);
-					}
+					} else { startPolling(callback); }
 				}
 
 				function startPolling(callback){
-					var tries = 0;
-					var maxTries = 20;
+					var tries = 0, maxTries = 20;
 					console.log('[auth] polling DOM...');
 					var poll = setInterval(function(){
 						tries++;
@@ -255,18 +233,10 @@ export const createWindow = (): void => {
 						if(dl){
 							console.log('[auth] polling trouvé =', dl, '(tentative '+tries+')');
 							rp('/whoami', {client_login: dl}, function(usr){
-								if(usr && usr.can_edit===true){
-									clearInterval(poll);
-									sessionStorage.setItem('wcpos_can_edit', 'true');
-									callback(true);
-								}
+								if(usr && usr.can_edit===true){ clearInterval(poll); sessionStorage.setItem('wcpos_can_edit', 'true'); callback(true); }
 							});
 						}
-						if(tries >= maxTries){
-							clearInterval(poll);
-							console.log('[auth] timeout, can_edit=false');
-							callback(false);
-						}
+						if(tries >= maxTries){ clearInterval(poll); console.log('[auth] timeout, can_edit=false'); callback(false); }
 					}, 500);
 				}
 
@@ -276,66 +246,35 @@ export const createWindow = (): void => {
 					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\\u2026</p>';
 					rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
 						window.__loadingPanel=false;
-						if(!d||!d.html){
-							wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>';
-							return;
-						}
+						if(!d||!d.html){ wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>'; return; }
 						wrap.innerHTML=d.html;
-						wrap.querySelectorAll('script').forEach(function(s){
-							var ns=document.createElement('script');ns.textContent=s.textContent;
-							s.parentNode.replaceChild(ns,s);
-						});
+						wrap.querySelectorAll('script').forEach(function(s){ var ns=document.createElement('script');ns.textContent=s.textContent;s.parentNode.replaceChild(ns,s); });
 					});
 				};
 
-				function navToClients(){
-					console.log('[wcpos-nav-to] customers');
-				}
-
-				function inPOS(){return !!document.querySelector('[data-testid="search-products"]');}
-				function currentTab(){
-					var u=window.location.href.toLowerCase();
-					var tabs=['products','orders','customers','reports'];
-					for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];}
-					return null;
-				}
+				function navToClients(){ console.log('[wcpos-nav-to] customers'); }
+				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
+				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 
 				function chkCaisse(){
 					if(!inPOS()) return;
-
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error) return;
 						var tab = currentTab();
 						var isPosTab = (tab==='products'||tab==='orders'||tab===null);
 						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
-
 						if(isAdmin){
-							if(!d.open){
-								showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
-							} else {
-								showCaisseToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
-							}
+							if(!d.open) showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
+							else showCaisseToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
 						} else if(isPosTab){
-							if(!d.open){
-								showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 veuillez l\\'ouvrir', 'caissier',
-									'\\uD83D\\uDD13 Ouvrir', function(){ navToClients(); });
-							} else {
-								hideCaisseToast();
-							}
+							if(!d.open) showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 veuillez l\\'ouvrir', 'caissier', '\\uD83D\\uDD13 Ouvrir', function(){ navToClients(); });
+							else hideCaisseToast();
 						}
 					});
 				}
 
-				initAuth(function(result){
-					isAdmin = result;
-					console.log('[auth] résultat final: isAdmin=' + isAdmin);
-					chkCaisse();
-				});
-
-				setInterval(function(){
-					if(isAdmin) chkCaisse();
-				}, 30000);
-
+				initAuth(function(result){ isAdmin = result; console.log('[auth] résultat final: isAdmin=' + isAdmin); chkCaisse(); });
+				setInterval(function(){ if(isAdmin) chkCaisse(); }, 30000);
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
@@ -343,7 +282,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.2 : Détection par "WooCommerce POS Pro" + correction hauteur
+	   v4.9.3 : Conteneur flex-1 (niveau 3) pour pleine largeur/hauteur
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -361,10 +300,8 @@ export const createWindow = (): void => {
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
-				if(!document.querySelector('[data-testid="search-products"]')){
-					console.log('[panel] hors POS'); return;
-				}
-				if(!window.__setup){console.log('[panel] setup absent'); return;}
+				if(!document.querySelector('[data-testid="search-products"]')){ console.log('[panel] hors POS'); return; }
+				if(!window.__setup){ console.log('[panel] setup absent'); return; }
 
 				var wpp=document.getElementById('wpp');
 				if(wpp&&wpp.getAttribute('data-pid')===tab&&wpp.innerHTML.length>100){
@@ -373,64 +310,48 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				// v4.9.2 : Chercher "WooCommerce POS Pro" → remonter au conteneur
+				// v4.9.3 : Chercher "WooCommerce POS Pro" → remonter au conteneur flex-1 (niveau 3)
 				var proContainer = null;
 				var allLeafs = document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
 					var el = allLeafs[i];
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
-						proContainer = el.parentElement?.parentElement;
+						// Niveau 1 : flex-col w-full, Niveau 2 : max-w-xl, Niveau 3 : flex-1
+						proContainer = el.parentElement?.parentElement?.parentElement;
 						break;
 					}
 				}
 
-				if(!proContainer){
-					console.log('[panel] conteneur Pro introuvable');
-					if(wpp) wpp.style.setProperty('display','none','important');
-					return;
-				}
+				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); if(wpp) wpp.style.setProperty('display','none','important'); return; }
 
 				var r = proContainer.getBoundingClientRect();
-				console.log('[panel] conteneur Pro: '+Math.round(r.width)+'x'+Math.round(r.height)+' x:'+Math.round(r.x)+' y:'+Math.round(r.y));
+				console.log('[panel] conteneur flex-1: '+Math.round(r.width)+'x'+Math.round(r.height)+' x:'+Math.round(r.x)+' y:'+Math.round(r.y));
 
 				// Masquer le contenu Pro (enfants directs)
-				for(var j=0; j<proContainer.children.length; j++){
-					proContainer.children[j].style.display = 'none';
-				}
+				for(var j=0; j<proContainer.children.length; j++){ proContainer.children[j].style.display = 'none'; }
 
-				// Forcer la hauteur du conteneur
+				// Forcer la hauteur et overflow
 				proContainer.style.minHeight = '400px';
 				proContainer.style.overflow = 'visible';
+				proContainer.style.position = 'relative';
 
 				// Corriger les parents avec overflow:hidden
 				var p = proContainer.parentElement;
 				while(p && p !== document.body){
-					if(window.getComputedStyle(p).overflow === 'hidden'){
-						p.style.overflow = 'visible';
-					}
+					if(window.getComputedStyle(p).overflow === 'hidden'){ p.style.overflow = 'visible'; }
 					p = p.parentElement;
 				}
 
 				// Calculer navLeft et hdrBottom
 				var navLeft = 56;
-				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]',
-				         '[class*="sidebar"]','nav[class]'];
-				for(var k=0;k<sel.length;k++){
-					var e2=document.querySelector(sel[k]);
-					if(e2){var r2=e2.getBoundingClientRect();
-						if(r2.left===0&&r2.width>0&&r2.width<200){navLeft=Math.round(r2.right);break;}
-					}
-				}
+				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]','[class*="sidebar"]','nav[class]'];
+				for(var k=0;k<sel.length;k++){ var e2=document.querySelector(sel[k]); if(e2){var r2=e2.getBoundingClientRect(); if(r2.left===0&&r2.width>0&&r2.width<200){navLeft=Math.round(r2.right);break;}} }
 
 				var hdrBottom=50;
 				document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],'
 					+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
 					+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
-				.forEach(function(e3){
-					var r3=e3.getBoundingClientRect();
-					if(r3.top<=5&&r3.width>window.innerWidth*0.5&&r3.height>10&&r3.height<200)
-						if(Math.round(r3.bottom)>hdrBottom)hdrBottom=Math.round(r3.bottom);
-				});
+				.forEach(function(e3){ var r3=e3.getBoundingClientRect(); if(r3.top<=5&&r3.width>window.innerWidth*0.5&&r3.height>10&&r3.height<200) if(Math.round(r3.bottom)>hdrBottom)hdrBottom=Math.round(r3.bottom); });
 
 				console.log('[panel] navLeft='+navLeft+' hdrBottom='+hdrBottom);
 
@@ -455,32 +376,17 @@ export const createWindow = (): void => {
 		log.info(`[${label}] url=${currentUrl} tab=${tab}`);
 		runAntiPro();
 		runSetup();
-		if (tab !== lastTab) {
-			lastTab = tab;
-			setTimeout(() => runPanelForTab(tab), 400);
-		}
+		if (tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 	}
 
-	mainWindow.webContents.on('dom-ready', () => {
-		mainWindow?.setTitle(APP_VERSION);
-		log.info('[dom-ready]');
-		onNavigate('dom-ready');
-	});
-	mainWindow.webContents.on('did-navigate', (_e, url) => {
-		log.info(`[did-navigate] ${url}`);
-		lastTab = null;
-		onNavigate('did-navigate', url);
-	});
-	mainWindow.webContents.on('did-navigate-in-page', (_e, url) => {
-		log.info(`[did-navigate-in-page] ${url}`);
-		onNavigate('did-navigate-in-page', url);
-	});
+	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); log.info('[dom-ready]'); onNavigate('dom-ready'); });
+	mainWindow.webContents.on('did-navigate', (_e, url) => { log.info(`[did-navigate] ${url}`); lastTab = null; onNavigate('did-navigate', url); });
+	mainWindow.webContents.on('did-navigate-in-page', (_e, url) => { log.info(`[did-navigate-in-page] ${url}`); onNavigate('did-navigate-in-page', url); });
 
 	let pollCount = 0;
 	const pollTimer = setInterval(() => {
 		if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(pollTimer); return; }
-		const url = mainWindow.webContents.getURL();
-		const tab = tabFromUrl(url);
+		const url = mainWindow.webContents.getURL(); const tab = tabFromUrl(url);
 		log.info(`[poll ${pollCount+1}/10] url=${url} tab=${tab}`);
 		runAntiPro(); runSetup();
 		if (tab && tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
@@ -489,31 +395,16 @@ export const createWindow = (): void => {
 
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
-		if (process.env.START_MINIMIZED) {
-			mainWindow.minimize();
-			mainWindow.show();
-		} else {
-			mainWindow.maximize();
-			mainWindow.show();
-			setTimeout(() => {
-				lastTab = null;
-				onNavigate('ready-maximized');
-			}, 800);
-		}
+		if (process.env.START_MINIMIZED) { mainWindow.minimize(); mainWindow.show(); }
+		else { mainWindow.maximize(); mainWindow.show(); setTimeout(() => { lastTab = null; onNavigate('ready-maximized'); }, 800); }
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
-	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-		shell.openExternal(url); return { action: 'deny' };
-	});
+	mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 
 	let retryCount = 0;
 	mainWindow.webContents.on('did-fail-load', async (_e, _code, desc) => {
 		log.error(`[did-fail-load] ${desc}`);
-		if (desc === 'ERR_CONNECTION_REFUSED') {
-			if (retryCount >= 30) return;
-			retryCount++;
-			setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) loadURL(mainWindow); }, 2000);
-		}
+		if (desc === 'ERR_CONNECTION_REFUSED') { if (retryCount >= 30) return; retryCount++; setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) loadURL(mainWindow); }, 2000); }
 	});
 };
 
