@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.5';
+const APP_VERSION  = 'WCPOS Custom 4.9.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.5 : Changement utilisateur → reset sessionStorage + toast
+	   v4.9.6 : Changement utilisateur → reset sessionStorage + toast
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.5');
+				console.log('[setup] v4.9.6');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -212,7 +212,6 @@ export const createWindow = (): void => {
 					return '';
 				}
 
-				// v4.9.5 : Détecter changement utilisateur
 				function checkUserChange(){
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
@@ -223,17 +222,12 @@ export const createWindow = (): void => {
 						hideCaisseToast();
 						return true;
 					}
-					if(currentUser && !storedUser){
-						sessionStorage.setItem('wcpos_user', currentUser);
-					}
+					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
 					return false;
 				}
 
 				function initAuth(callback){
-					if(checkUserChange()){
-						// L'utilisateur a changé, on relance l'auth complète
-						isAdmin = false;
-					}
+					if(checkUserChange()){ isAdmin = false; }
 					var cached = sessionStorage.getItem('wcpos_can_edit');
 					if(cached === 'true'){ console.log('[auth] sessionStorage can_edit=true'); callback(true); return; }
 					var domLogin = getUserFromDOM();
@@ -304,7 +298,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.5 : Un #wpp-{tab} par onglet + exclusion des wpp du masquage
+	   v4.9.6 : Conteneur visible (width>0) + exclusion wpp du masquage
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -336,14 +330,18 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				// Chercher "WooCommerce POS Pro" → conteneur flex-1
+				// v4.9.6 : Chercher "WooCommerce POS Pro" dans conteneur VISIBLE (width>0)
 				var proContainer = null;
 				var allLeafs = document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
 					var el = allLeafs[i];
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
-						proContainer = el.parentElement?.parentElement?.parentElement;
-						break;
+						var c = el.parentElement?.parentElement?.parentElement;
+						var cr = c?.getBoundingClientRect();
+						if(cr && cr.width > 0){
+							proContainer = c;
+							break;
+						}
 					}
 				}
 
