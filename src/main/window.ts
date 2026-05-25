@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.3';
+const APP_VERSION  = 'WCPOS Custom 4.9.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -138,7 +138,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.3');
+				console.log('[setup] v4.9.4');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -282,15 +282,15 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.3 : Conteneur flex-1 (niveau 3) pour pleine largeur/hauteur
+	   v4.9.4 : Un #wpp-{tab} par onglet, persistants
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
-				var w=document.getElementById('wpp');
-				if(w){w.style.setProperty('display','none','important');console.log('[panel] cache');}
+				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
+				console.log('[panel] tous cachés');
 			})();`).catch(() => {});
 			return;
 		}
@@ -303,65 +303,61 @@ export const createWindow = (): void => {
 				if(!document.querySelector('[data-testid="search-products"]')){ console.log('[panel] hors POS'); return; }
 				if(!window.__setup){ console.log('[panel] setup absent'); return; }
 
-				var wpp=document.getElementById('wpp');
-				if(wpp&&wpp.getAttribute('data-pid')===tab&&wpp.innerHTML.length>100){
-					wpp.style.removeProperty('display');
-					console.log('[panel] re-affiche tab='+tab);
+				var wppId = 'wpp-' + tab;
+				var wpp = document.getElementById(wppId);
+
+				// Si déjà chargé, juste afficher
+				if(wpp && wpp.innerHTML.length > 100){
+					document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
+					wpp.style.display = '';
+					console.log('[panel] affiche '+tab+' (cache)');
 					return;
 				}
 
-				// v4.9.3 : Chercher "WooCommerce POS Pro" → remonter au conteneur flex-1 (niveau 3)
+				// Chercher "WooCommerce POS Pro" → conteneur flex-1
 				var proContainer = null;
 				var allLeafs = document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
 					var el = allLeafs[i];
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
-						// Niveau 1 : flex-col w-full, Niveau 2 : max-w-xl, Niveau 3 : flex-1
 						proContainer = el.parentElement?.parentElement?.parentElement;
 						break;
 					}
 				}
 
-				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); if(wpp) wpp.style.setProperty('display','none','important'); return; }
+				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); return; }
 
 				var r = proContainer.getBoundingClientRect();
-				console.log('[panel] conteneur flex-1: '+Math.round(r.width)+'x'+Math.round(r.height)+' x:'+Math.round(r.x)+' y:'+Math.round(r.y));
+				console.log('[panel] conteneur flex-1 '+tab+': '+Math.round(r.width)+'x'+Math.round(r.height));
 
-				// Masquer le contenu Pro (enfants directs)
+				// Masquer le contenu Pro
 				for(var j=0; j<proContainer.children.length; j++){ proContainer.children[j].style.display = 'none'; }
 
-				// Forcer la hauteur et overflow
+				// Forcer la hauteur
 				proContainer.style.minHeight = '400px';
 				proContainer.style.overflow = 'visible';
 				proContainer.style.position = 'relative';
 
-				// Corriger les parents avec overflow:hidden
+				// Corriger les parents overflow:hidden
 				var p = proContainer.parentElement;
 				while(p && p !== document.body){
 					if(window.getComputedStyle(p).overflow === 'hidden'){ p.style.overflow = 'visible'; }
 					p = p.parentElement;
 				}
 
-				// Calculer navLeft et hdrBottom
-				var navLeft = 56;
-				var sel=['[class*="TabBar"]','[class*="Sidebar"]','[class*="Navigation"]','[class*="sidebar"]','nav[class]'];
-				for(var k=0;k<sel.length;k++){ var e2=document.querySelector(sel[k]); if(e2){var r2=e2.getBoundingClientRect(); if(r2.left===0&&r2.width>0&&r2.width<200){navLeft=Math.round(r2.right);break;}} }
+				// Masquer tous les autres wpp
+				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
 
-				var hdrBottom=50;
-				document.querySelectorAll('header,nav,[role="banner"],[role="navigation"],'
-					+'[class*="Header"],[class*="TopBar"],[class*="AppBar"],'
-					+'[class*="Toolbar"],[class*="header"],[class*="topbar"],[class*="NavBar"]')
-				.forEach(function(e3){ var r3=e3.getBoundingClientRect(); if(r3.top<=5&&r3.width>window.innerWidth*0.5&&r3.height>10&&r3.height<200) if(Math.round(r3.bottom)>hdrBottom)hdrBottom=Math.round(r3.bottom); });
+				// Créer wpp si nécessaire
+				if(!wpp){
+					wpp = document.createElement('div');
+					wpp.id = wppId;
+					proContainer.appendChild(wpp);
+				}
 
-				console.log('[panel] navLeft='+navLeft+' hdrBottom='+hdrBottom);
-
-				if(wpp) wpp.remove();
-				var w=document.createElement('div');
-				w.id='wpp'; w.setAttribute('data-pid',tab);
-				w.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;'
+				wpp.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;'
 					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
-				proContainer.appendChild(w);
-				window.__loadPanel(tab,w,null,true);
+				window.__loadPanel(tab, wpp, null, true);
 			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
 	}
