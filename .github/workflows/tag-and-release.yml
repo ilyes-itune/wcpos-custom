@@ -39,7 +39,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
-  - name: 🔧 Patch bundle WCPOS
+      
+      - name: 🔧 Patch bundle WCPOS
         shell: python
         run: |
           path = 'dist/entry-ff3d85c05501dc9df6d40e5df26d68c5.js'
