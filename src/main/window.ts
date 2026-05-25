@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.9';
+const APP_VERSION  = 'WCPOS Custom 5.0.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.9 : Overlay caissier (zone contenu) + toast admin + POS_TABS
+	   v5.0.0 : Overlay caissier masqué sur onglets non-POS
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,12 +139,10 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.9');
+				console.log('[setup] v5.0.0');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
-
-				// Onglets où l'overlay caissier s'affiche (modifiable)
 				var POS_TABS = ['products', 'orders'];
 
 				function rp(ep,data,cb){
@@ -170,22 +168,17 @@ export const createWindow = (): void => {
 					setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
 				}
 
-				function hideAdminToast(){
-					var old = document.getElementById('wct');
-					if(old) old.remove();
-				}
+				function hideAdminToast(){ var old = document.getElementById('wct'); if(old) old.remove(); }
 
 				function showCaissierOverlay(msg){
 					var old = document.getElementById('wco');
 					if(old) old.remove();
-
 					var navLeft = 56;
 					var sel = ['[class*="TabBar"]','[class*="Sidebar"]','[class*="sidebar"]','nav[class]'];
 					for(var i=0; i<sel.length; i++){
 						var e = document.querySelector(sel[i]);
 						if(e){ var r = e.getBoundingClientRect(); if(r.left===0 && r.width>0 && r.width<200){ navLeft = Math.round(r.right); break; } }
 					}
-
 					var ov = document.createElement('div');
 					ov.id = 'wco';
 					ov.style.cssText = 'position:fixed;top:0;left:'+navLeft+'px;right:0;bottom:0;z-index:40;'
@@ -199,10 +192,7 @@ export const createWindow = (): void => {
 					console.log('[overlay] caissier');
 				}
 
-				function hideCaissierOverlay(){
-					var ov = document.getElementById('wco');
-					if(ov) ov.remove();
-				}
+				function hideCaissierOverlay(){ var ov = document.getElementById('wco'); if(ov) ov.remove(); }
 
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
@@ -299,6 +289,7 @@ export const createWindow = (): void => {
 						var tab = currentTab();
 						var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab===null);
 						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
+
 						if(isAdmin){
 							hideCaissierOverlay();
 							if(!d.open) showAdminToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
@@ -307,6 +298,9 @@ export const createWindow = (): void => {
 							hideAdminToast();
 							if(!d.open) showCaissierOverlay(d.message);
 							else hideCaissierOverlay();
+						} else {
+							// v5.0.0 : masquer l'overlay sur les onglets non-POS
+							hideCaissierOverlay();
 						}
 					});
 				}
@@ -323,7 +317,6 @@ export const createWindow = (): void => {
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
-
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
@@ -331,60 +324,42 @@ export const createWindow = (): void => {
 			})();`).catch(() => {});
 			return;
 		}
-
 		log.info(`[panel] → ${tab}`);
-
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
 				if(!document.querySelector('[data-testid="search-products"]')){ console.log('[panel] hors POS'); return; }
 				if(!window.__setup){ console.log('[panel] setup absent'); return; }
-
-				var wppId = 'wpp-' + tab;
-				var wpp = document.getElementById(wppId);
-
+				var wppId='wpp-'+tab, wpp=document.getElementById(wppId);
 				if(wpp && wpp.innerHTML.length > 100){
 					document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
-					wpp.style.display = '';
-					console.log('[panel] affiche '+tab+' (cache)');
-					return;
+					wpp.style.display = ''; console.log('[panel] affiche '+tab+' (cache)'); return;
 				}
-
-				var proContainer = null;
-				var allLeafs = document.querySelectorAll('*');
+				var proContainer=null;
+				var allLeafs=document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
-					var el = allLeafs[i];
+					var el=allLeafs[i];
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
-						var c = el.parentElement?.parentElement?.parentElement;
-						var cr = c?.getBoundingClientRect();
-						if(cr && cr.width > 0){ proContainer = c; break; }
+						var c=el.parentElement?.parentElement?.parentElement;
+						var cr=c?.getBoundingClientRect();
+						if(cr && cr.width > 0){ proContainer=c; break; }
 					}
 				}
-
 				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); return; }
-				var r = proContainer.getBoundingClientRect();
+				var r=proContainer.getBoundingClientRect();
 				console.log('[panel] conteneur flex-1 '+tab+': '+Math.round(r.width)+'x'+Math.round(r.height));
-
 				for(var j=0; j<proContainer.children.length; j++){
 					if(!proContainer.children[j].id.startsWith('wpp-')){ proContainer.children[j].style.display = 'none'; }
 				}
-
-				proContainer.style.minHeight = '400px';
-				proContainer.style.overflow = 'visible';
-				proContainer.style.position = 'relative';
-
-				var p = proContainer.parentElement;
-				while(p && p !== document.body){
-					if(window.getComputedStyle(p).overflow === 'hidden'){ p.style.overflow = 'visible'; }
-					p = p.parentElement;
+				proContainer.style.minHeight='400px'; proContainer.style.overflow='visible'; proContainer.style.position='relative';
+				var p=proContainer.parentElement;
+				while(p && p!==document.body){
+					if(window.getComputedStyle(p).overflow==='hidden'){ p.style.overflow='visible'; }
+					p=p.parentElement;
 				}
-
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
-
-				if(!wpp){ wpp = document.createElement('div'); wpp.id = wppId; proContainer.appendChild(wpp); }
-
-				wpp.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;'
-					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
+				if(!wpp){ wpp=document.createElement('div'); wpp.id=wppId; proContainer.appendChild(wpp); }
+				wpp.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
 				window.__loadPanel(tab, wpp, null, true);
 			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
@@ -392,21 +367,17 @@ export const createWindow = (): void => {
 
 	/* ── Orchestration ───────────────────────────────────────────────────── */
 	let lastTab: string | null = null;
-
 	function onNavigate(label: string, url?: string): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const currentUrl = url ?? mainWindow.webContents.getURL();
 		const tab = tabFromUrl(currentUrl);
 		log.info(`[${label}] url=${currentUrl} tab=${tab}`);
-		runAntiPro();
-		runSetup();
+		runAntiPro(); runSetup();
 		if (tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 	}
-
 	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); log.info('[dom-ready]'); onNavigate('dom-ready'); });
 	mainWindow.webContents.on('did-navigate', (_e, url) => { log.info(`[did-navigate] ${url}`); lastTab = null; onNavigate('did-navigate', url); });
 	mainWindow.webContents.on('did-navigate-in-page', (_e, url) => { log.info(`[did-navigate-in-page] ${url}`); onNavigate('did-navigate-in-page', url); });
-
 	let pollCount = 0;
 	const pollTimer = setInterval(() => {
 		if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(pollTimer); return; }
@@ -416,7 +387,6 @@ export const createWindow = (): void => {
 		if (tab && tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 		if (++pollCount >= 10) clearInterval(pollTimer);
 	}, 2000);
-
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
 		if (process.env.START_MINIMIZED) { mainWindow.minimize(); mainWindow.show(); }
@@ -424,7 +394,6 @@ export const createWindow = (): void => {
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
-
 	let retryCount = 0;
 	mainWindow.webContents.on('did-fail-load', async (_e, _code, desc) => {
 		log.error(`[did-fail-load] ${desc}`);
