@@ -1,10 +1,10 @@
 {
 	"name": "@wcpos/app-electron",
 	"license": "MIT",
-	"productName": "WooCommerce POS",
+	"productName": "WC-POS",
 	"version": "1.9.0",
 	"description": "Electron app for WooCommerce POS",
-	"author": "Paul Kilmurray <paul@wcpos.com>",
+	"author": "PK",
 	"packageManager": "pnpm@10.31.0",
 	"pnpm": {
 		"onlyBuiltDependencies": [
