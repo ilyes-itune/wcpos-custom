@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.6';
+const APP_VERSION  = 'WCPOS Custom 4.9.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -106,12 +106,12 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub
+	   BLOC 1 — Anti-pub + add-misc-product
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
-		              'view-demo-button','add-fee','add-shipping'];
+		              'view-demo-button','add-fee','add-shipping','add-misc-product'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
 			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.6 : Changement utilisateur → reset sessionStorage + toast
+	   v4.9.7 : Changement utilisateur détecté dans chkCaisse + add-misc-product
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.6');
+				console.log('[setup] v4.9.7');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -212,22 +212,7 @@ export const createWindow = (): void => {
 					return '';
 				}
 
-				function checkUserChange(){
-					var currentUser = getUserFromDOM();
-					var storedUser = sessionStorage.getItem('wcpos_user');
-					if(currentUser && currentUser !== storedUser){
-						console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
-						sessionStorage.removeItem('wcpos_can_edit');
-						sessionStorage.setItem('wcpos_user', currentUser);
-						hideCaisseToast();
-						return true;
-					}
-					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
-					return false;
-				}
-
 				function initAuth(callback){
-					if(checkUserChange()){ isAdmin = false; }
 					var cached = sessionStorage.getItem('wcpos_can_edit');
 					if(cached === 'true'){ console.log('[auth] sessionStorage can_edit=true'); callback(true); return; }
 					var domLogin = getUserFromDOM();
@@ -274,6 +259,26 @@ export const createWindow = (): void => {
 
 				function chkCaisse(){
 					if(!inPOS()) return;
+
+					// v4.9.7 : Détecter le changement d'utilisateur
+					var currentUser = getUserFromDOM();
+					var storedUser = sessionStorage.getItem('wcpos_user');
+					if(currentUser && storedUser && currentUser !== storedUser){
+						console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
+						sessionStorage.removeItem('wcpos_can_edit');
+						sessionStorage.setItem('wcpos_user', currentUser);
+						hideCaisseToast();
+						isAdmin = false;
+						initAuth(function(result){
+							isAdmin = result;
+							console.log('[auth] nouvelle auth: isAdmin=' + isAdmin);
+						});
+						return;
+					}
+					if(currentUser && !storedUser){
+						sessionStorage.setItem('wcpos_user', currentUser);
+					}
+
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error) return;
 						var tab = currentTab();
@@ -290,7 +295,7 @@ export const createWindow = (): void => {
 				}
 
 				initAuth(function(result){ isAdmin = result; console.log('[auth] résultat final: isAdmin=' + isAdmin); chkCaisse(); });
-				setInterval(function(){ if(isAdmin) chkCaisse(); }, 30000);
+				setInterval(function(){ chkCaisse(); }, 30000);
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
@@ -298,7 +303,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.6 : Conteneur visible (width>0) + exclusion wpp du masquage
+	   v4.9.7 : Conteneur visible (width>0) + exclusion wpp du masquage
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -322,7 +327,6 @@ export const createWindow = (): void => {
 				var wppId = 'wpp-' + tab;
 				var wpp = document.getElementById(wppId);
 
-				// Si déjà chargé, juste afficher
 				if(wpp && wpp.innerHTML.length > 100){
 					document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
 					wpp.style.display = '';
@@ -330,7 +334,6 @@ export const createWindow = (): void => {
 					return;
 				}
 
-				// v4.9.6 : Chercher "WooCommerce POS Pro" dans conteneur VISIBLE (width>0)
 				var proContainer = null;
 				var allLeafs = document.querySelectorAll('*');
 				for(var i=0; i<allLeafs.length; i++){
@@ -338,10 +341,7 @@ export const createWindow = (): void => {
 					if(el.children.length===0 && (el.textContent||'').trim().indexOf('WooCommerce POS Pro') > -1){
 						var c = el.parentElement?.parentElement?.parentElement;
 						var cr = c?.getBoundingClientRect();
-						if(cr && cr.width > 0){
-							proContainer = c;
-							break;
-						}
+						if(cr && cr.width > 0){ proContainer = c; break; }
 					}
 				}
 
@@ -350,29 +350,24 @@ export const createWindow = (): void => {
 				var r = proContainer.getBoundingClientRect();
 				console.log('[panel] conteneur flex-1 '+tab+': '+Math.round(r.width)+'x'+Math.round(r.height));
 
-				// Masquer le contenu Pro (sauf les #wpp-*)
 				for(var j=0; j<proContainer.children.length; j++){
 					if(!proContainer.children[j].id.startsWith('wpp-')){
 						proContainer.children[j].style.display = 'none';
 					}
 				}
 
-				// Forcer la hauteur
 				proContainer.style.minHeight = '400px';
 				proContainer.style.overflow = 'visible';
 				proContainer.style.position = 'relative';
 
-				// Corriger les parents overflow:hidden
 				var p = proContainer.parentElement;
 				while(p && p !== document.body){
 					if(window.getComputedStyle(p).overflow === 'hidden'){ p.style.overflow = 'visible'; }
 					p = p.parentElement;
 				}
 
-				// Masquer tous les autres wpp
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
 
-				// Créer wpp si nécessaire
 				if(!wpp){
 					wpp = document.createElement('div');
 					wpp.id = wppId;
