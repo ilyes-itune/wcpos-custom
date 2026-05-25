@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.0';
+const APP_VERSION  = 'WCPOS Custom 5.0.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -129,6 +129,7 @@ export const createWindow = (): void => {
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
 	   v5.0.0 : Overlay caissier masqué sur onglets non-POS
+	   v5.0.1 : Appel immédiat de chkCaisse après navigation (fix persistance overlay)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +140,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.0');
+				console.log('[setup] v5.0.1');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -267,8 +268,11 @@ export const createWindow = (): void => {
 				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 
-				function chkCaisse(){
+				/* v5.0.1 : chkCaisse exposée globalement + guard anti-empilement */
+				window.chkCaisse = function chkCaisse(){
+					if(window._chkBusy) return;
 					if(!inPOS()) return;
+					window._chkBusy = true;
 
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
@@ -279,13 +283,13 @@ export const createWindow = (): void => {
 						hideAdminToast();
 						hideCaissierOverlay();
 						isAdmin = false;
-						initAuth(function(result){ isAdmin = result; console.log('[auth] nouvelle auth: isAdmin=' + isAdmin); });
+						initAuth(function(result){ isAdmin = result; console.log('[auth] nouvelle auth: isAdmin=' + isAdmin); window._chkBusy = false; });
 						return;
 					}
 					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
 
 					rp('/caisse/status',{},function(d){
-						if(!d||d.error) return;
+						if(!d||d.error){ window._chkBusy = false; return; }
 						var tab = currentTab();
 						var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab===null);
 						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
@@ -302,14 +306,29 @@ export const createWindow = (): void => {
 							// v5.0.0 : masquer l'overlay sur les onglets non-POS
 							hideCaissierOverlay();
 						}
+						window._chkBusy = false;
 					});
-				}
+				};
 
-				initAuth(function(result){ isAdmin = result; console.log('[auth] résultat final: isAdmin=' + isAdmin); chkCaisse(); });
-				setInterval(function(){ chkCaisse(); }, 30000);
+				initAuth(function(result){ isAdmin = result; console.log('[auth] résultat final: isAdmin=' + isAdmin); window.chkCaisse(); });
+				setInterval(function(){ window.chkCaisse(); }, 30000);
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
+	}
+
+	/**
+	 * v5.0.1 : Demande au renderer d'exécuter chkCaisse() immédiatement.
+	 * Appelé après chaque navigation pour éviter la persistance de l'overlay
+	 * jusqu'au prochain cycle setInterval de 30s.
+	 */
+	function triggerChkCaisse(): void {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
+		mainWindow.webContents.executeJavaScript(`
+			(function(){
+				if(window.chkCaisse) window.chkCaisse();
+			})();
+		`).catch(() => {});
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
@@ -373,6 +392,8 @@ export const createWindow = (): void => {
 		const tab = tabFromUrl(currentUrl);
 		log.info(`[${label}] url=${currentUrl} tab=${tab}`);
 		runAntiPro(); runSetup();
+		// v5.0.1 : mise à jour immédiate de l'overlay après navigation
+		triggerChkCaisse();
 		if (tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 	}
 	mainWindow.webContents.on('dom-ready', () => { mainWindow?.setTitle(APP_VERSION); log.info('[dom-ready]'); onNavigate('dom-ready'); });
@@ -384,6 +405,8 @@ export const createWindow = (): void => {
 		const url = mainWindow.webContents.getURL(); const tab = tabFromUrl(url);
 		log.info(`[poll ${pollCount+1}/10] url=${url} tab=${tab}`);
 		runAntiPro(); runSetup();
+		// v5.0.1 : mise à jour immédiate de l'overlay pendant la phase de polling
+		triggerChkCaisse();
 		if (tab && tab !== lastTab) { lastTab = tab; setTimeout(() => runPanelForTab(tab), 400); }
 		if (++pollCount >= 10) clearInterval(pollTimer);
 	}, 2000);
