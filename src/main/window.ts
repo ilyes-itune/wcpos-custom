@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 4.9.7';
+const APP_VERSION  = 'WCPOS Custom 4.9.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -106,7 +106,7 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub + add-misc-product
+	   BLOC 1 — Anti-pub
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -128,7 +128,7 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v4.9.7 : Changement utilisateur détecté dans chkCaisse + add-misc-product
+	   v4.9.8 : Overlay caissier (zone contenu uniquement) + toast admin
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -139,7 +139,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v4.9.7');
+				console.log('[setup] v4.9.8');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -151,38 +151,61 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				function showCaisseToast(msg, type, actionLabel, actionFn){
+				function showAdminToast(msg, type){
 					var old = document.getElementById('wct');
 					if(old) old.remove();
 					var toast = document.createElement('div');
 					toast.id = 'wct';
-					var bgColor = type==='admin_open'   ? '#00a32a' :
-					              type==='admin_closed' ? '#d63638' :
-					              type==='caissier'     ? '#d63638' : '#d63638';
+					var bgColor = type==='admin_open' ? '#00a32a' : '#d63638';
 					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
 						+ 'background:'+bgColor+';color:#fff;padding:12px 20px;border-radius:6px;'
 						+ 'font-size:13px;font-weight:600;z-index:999999;'
 						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
-					var textSpan = document.createElement('span');
-					textSpan.textContent = msg;
-					toast.appendChild(textSpan);
-					if(actionLabel && actionFn){
-						var btn = document.createElement('button');
-						btn.textContent = actionLabel;
-						btn.style.cssText = 'background:#fff;color:'+bgColor+';border:none;'
-							+ 'padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;margin-left:12px;';
-						btn.addEventListener('click', actionFn);
-						toast.appendChild(btn);
-						toast.style.cssText = toast.style.cssText.replace('max-width:320px','max-width:420px');
-					}
+					toast.textContent = msg;
 					document.body.appendChild(toast);
-					console.log('[toast] ' + type + ': ' + msg);
-					if(type==='admin_open' || type==='admin_closed'){
-						setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
-					}
+					console.log('[toast] admin: ' + (type==='admin_open'?'ouverte':'fermee'));
+					setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
 				}
 
-				function hideCaisseToast(){ var old = document.getElementById('wct'); if(old) old.remove(); }
+				function hideAdminToast(){
+					var old = document.getElementById('wct');
+					if(old) old.remove();
+				}
+
+				function showCaissierOverlay(msg){
+					var old = document.getElementById('wco');
+					if(old) old.remove();
+
+					var navLeft = 56;
+					var sel = ['[class*="TabBar"]','[class*="Sidebar"]','[class*="sidebar"]','nav[class]'];
+					for(var i=0; i<sel.length; i++){
+						var e = document.querySelector(sel[i]);
+						if(e){ var r = e.getBoundingClientRect(); if(r.left===0 && r.width>0 && r.width<200){ navLeft = Math.round(r.right); break; } }
+					}
+
+					var ov = document.createElement('div');
+					ov.id = 'wco';
+					ov.style.cssText = 'position:fixed;top:0;left:'+navLeft+'px;right:0;bottom:0;z-index:40;'
+						+'background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;'
+						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff;';
+					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">&#128274;</div>'
+						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2>'
+						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
+						+(msg||'La caisse est fermée. Ouvrez-la avant de commencer.')+'</p>'
+						+'<button id="wco-btn" style="background:#00a32a;color:#fff;border:none;padding:12px 28px;border-radius:6px;font-size:1em;font-weight:600;cursor:pointer">'
+						+'🔓 Ouvrir la caisse</button>';
+					document.body.appendChild(ov);
+					document.getElementById('wco-btn').addEventListener('click', function(){
+						ov.remove();
+						console.log('[wcpos-nav-to] customers');
+					});
+					console.log('[overlay] caissier');
+				}
+
+				function hideCaissierOverlay(){
+					var ov = document.getElementById('wco');
+					if(ov) ov.remove();
+				}
 
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
@@ -260,24 +283,19 @@ export const createWindow = (): void => {
 				function chkCaisse(){
 					if(!inPOS()) return;
 
-					// v4.9.7 : Détecter le changement d'utilisateur
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
 					if(currentUser && storedUser && currentUser !== storedUser){
 						console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
 						sessionStorage.removeItem('wcpos_can_edit');
 						sessionStorage.setItem('wcpos_user', currentUser);
-						hideCaisseToast();
+						hideAdminToast();
+						hideCaissierOverlay();
 						isAdmin = false;
-						initAuth(function(result){
-							isAdmin = result;
-							console.log('[auth] nouvelle auth: isAdmin=' + isAdmin);
-						});
+						initAuth(function(result){ isAdmin = result; console.log('[auth] nouvelle auth: isAdmin=' + isAdmin); });
 						return;
 					}
-					if(currentUser && !storedUser){
-						sessionStorage.setItem('wcpos_user', currentUser);
-					}
+					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
 
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error) return;
@@ -285,11 +303,13 @@ export const createWindow = (): void => {
 						var isPosTab = (tab==='products'||tab==='orders'||tab===null);
 						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
 						if(isAdmin){
-							if(!d.open) showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
-							else showCaisseToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
+							hideCaissierOverlay();
+							if(!d.open) showAdminToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
+							else showAdminToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
 						} else if(isPosTab){
-							if(!d.open) showCaisseToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 veuillez l\\'ouvrir', 'caissier', '\\uD83D\\uDD13 Ouvrir', function(){ navToClients(); });
-							else hideCaisseToast();
+							hideAdminToast();
+							if(!d.open) showCaissierOverlay(d.message);
+							else hideCaissierOverlay();
 						}
 					});
 				}
@@ -303,7 +323,6 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 3 — Panel
-	   v4.9.7 : Conteneur visible (width>0) + exclusion wpp du masquage
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -346,14 +365,11 @@ export const createWindow = (): void => {
 				}
 
 				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); return; }
-
 				var r = proContainer.getBoundingClientRect();
 				console.log('[panel] conteneur flex-1 '+tab+': '+Math.round(r.width)+'x'+Math.round(r.height));
 
 				for(var j=0; j<proContainer.children.length; j++){
-					if(!proContainer.children[j].id.startsWith('wpp-')){
-						proContainer.children[j].style.display = 'none';
-					}
+					if(!proContainer.children[j].id.startsWith('wpp-')){ proContainer.children[j].style.display = 'none'; }
 				}
 
 				proContainer.style.minHeight = '400px';
@@ -368,11 +384,7 @@ export const createWindow = (): void => {
 
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
 
-				if(!wpp){
-					wpp = document.createElement('div');
-					wpp.id = wppId;
-					proContainer.appendChild(wpp);
-				}
+				if(!wpp){ wpp = document.createElement('div'); wpp.id = wppId; proContainer.appendChild(wpp); }
 
 				wpp.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;'
 					+'background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
