@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow, shell, Menu } from 'electron';
 import serve from 'electron-serve';
 import { logger as log } from './log';
 import { isDevelopment } from './util';
@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.4';
+const APP_VERSION  = 'WCPOS Custom 5.0.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -32,12 +32,15 @@ export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
 		show: false, width: 1024, height: 728, title: APP_VERSION,
 		icon: path.join(__dirname, '../../icons/icon.ico'),
+		autoHideMenuBar: true,
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
 			sandbox: false, nodeIntegration: false, contextIsolation: true,
 		},
 		backgroundColor: '#fff',
 	});
+
+	mainWindow.setMenu(null);
 
 	if (isDevelopment) mainWindow.webContents.openDevTools();
 
@@ -155,6 +158,7 @@ export const createWindow = (): void => {
 	   v5.0.0 : Overlay caissier masqué sur onglets non-POS
 	   v5.0.1 : Appel immédiat de chkCaisse après navigation (fix persistance overlay)
 	   v5.0.2 : Overlay préventif immédiat avant auth (bloque le panier dès le chargement)
+	   v5.0.5 : Exposition showCaissierOverlay, inPOS, currentTab pour triggerChkCaisse
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -165,7 +169,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.4');
+				console.log('[setup] v5.0.5');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -217,6 +221,9 @@ export const createWindow = (): void => {
 					document.body.appendChild(ov);
 					console.log('[overlay] caissier' + (isInit ? ' (init)' : ''));
 				}
+
+				// v5.0.5 : exposer pour triggerChkCaisse
+				window.showCaissierOverlay = showCaissierOverlay;
 
 				function hideCaissierOverlay(){ var ov = document.getElementById('wco'); if(ov) ov.remove(); }
 
@@ -291,7 +298,12 @@ export const createWindow = (): void => {
 
 				function navToClients(){ console.log('[wcpos-nav-to] customers'); }
 				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
+				// v5.0.5 : exposer pour triggerChkCaisse
+				window.inPOS = inPOS;
+
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
+				// v5.0.5 : exposer pour triggerChkCaisse
+				window.currentTab = currentTab;
 
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
@@ -347,10 +359,23 @@ export const createWindow = (): void => {
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
 	}
 
+	/**
+	 * v5.0.1 : Demande au renderer d'exécuter chkCaisse() immédiatement.
+	 * v5.0.5 : Overlay préventif immédiat sur onglet POS avant vérification.
+	 */
 	function triggerChkCaisse(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`
 			(function(){
+				// v5.0.5 : overlay préventif immédiat sur onglet POS avant vérification réseau
+				if(window.inPOS && window.inPOS() && window.showCaissierOverlay){
+					var tab = window.currentTab ? window.currentTab() : null;
+					var POS_TABS = ['products', 'orders'];
+					var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab === null);
+					if(isPosTab && !document.getElementById('wco')){
+						window.showCaissierOverlay(null, true);
+					}
+				}
 				if(window.chkCaisse) window.chkCaisse();
 			})();
 		`).catch(() => {});
