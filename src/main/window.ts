@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.1.1';
+const APP_VERSION  = 'WCPOS Custom 5.1.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -129,7 +129,8 @@ export const createWindow = (): void => {
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
-		              'view-demo-button','add-fee','add-shipping','add-misc-product'];
+              'view-demo-button','add-fee','add-shipping','add-misc-product',
+              'order-note-button','order-meta-button','save-to-server-button'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
 			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
