@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.5';
+const APP_VERSION  = 'WCPOS Custom 5.0.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -42,7 +42,8 @@ export const createWindow = (): void => {
 
 	mainWindow.setMenu(null);
 
-	if (isDevelopment) mainWindow.webContents.openDevTools();
+	// v5.0.6 : DevTools toujours ouverts
+	mainWindow.webContents.openDevTools();
 
 	/* ── Logging renderer ────────────────────────────────────────────────── */
 	mainWindow.webContents.on('console-message', (_e, level, message, line, src) => {
@@ -169,7 +170,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.5');
+				console.log('[setup] v5.0.6');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -362,18 +363,24 @@ export const createWindow = (): void => {
 	/**
 	 * v5.0.1 : Demande au renderer d'exécuter chkCaisse() immédiatement.
 	 * v5.0.5 : Overlay préventif immédiat sur onglet POS avant vérification.
+	 * v5.0.6 : Flag _preventiveShown pour éviter le flickering.
 	 */
 	function triggerChkCaisse(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`
 			(function(){
-				// v5.0.5 : overlay préventif immédiat sur onglet POS avant vérification réseau
+				// v5.0.6 : overlay préventif uniquement si aucun overlay existant ET pas déjà affiché sur cet onglet
 				if(window.inPOS && window.inPOS() && window.showCaissierOverlay){
 					var tab = window.currentTab ? window.currentTab() : null;
 					var POS_TABS = ['products', 'orders'];
 					var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab === null);
-					if(isPosTab && !document.getElementById('wco')){
+					var existingOverlay = document.getElementById('wco');
+					if(isPosTab && !existingOverlay && !window._preventiveShown){
+						window._preventiveShown = true;
 						window.showCaissierOverlay(null, true);
+					}
+					if(!isPosTab){
+						window._preventiveShown = false;
 					}
 				}
 				if(window.chkCaisse) window.chkCaisse();
