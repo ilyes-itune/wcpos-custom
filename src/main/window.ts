@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.1.0';
+const APP_VERSION  = 'WCPOS Custom 5.1.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -91,20 +91,11 @@ export const createWindow = (): void => {
 			'*://updates.wcpos.com/*',
 			'*://wcpos.com/*','*://*.wcpos.com/*',
 			'*://api.github.com/repos/wcpos/*',
-			// v5.0.10 : blocage WidgetBot
 			'*://*.widgetbot.io/*',
 			'*://widgetbot.io/*',
 		] },
 		(_d, cb) => cb({ cancel: true })
 	);
-
-	// v5.0.10 : blocage navigation vers /support
-	mainWindow.webContents.on('will-navigate', (event, url) => {
-		if (url.includes('/support')) {
-			event.preventDefault();
-			log.info('[nav] support bloqué');
-		}
-	});
 
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
@@ -133,16 +124,14 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 1 — Anti-pub
-	   v5.0.4 : MutationObserver pour remplacer le tooltip "Clients" → "Caisse"
-	   v5.0.10 : Retrait suppression JS du bouton Support (restaure menu utilisateur)
+	   v5.1.1 : MutationObserver pour tooltip + titre "Clients" → "Caisse"
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
 		              'view-demo-button','add-fee','add-shipping','add-misc-product'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
-			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`
-			+ `,a[href*="/support"],a[href*="support"],[data-testid*="support"]{display:none!important;pointer-events:none!important;height:0!important;overflow:hidden!important}`;
+			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__ap||!document||!document.documentElement)return;
 			try{
@@ -152,27 +141,38 @@ export const createWindow = (): void => {
 				(document.head||document.documentElement).appendChild(s);
 				console.log('[ap] OK');
 
-				// v5.0.10 : Observer pour le tooltip uniquement (plus de suppression Support)
-				var apObserver = new MutationObserver(function() {
-					var popovers = document.querySelectorAll('[class*="text-popover-foreground"]');
-					popovers.forEach(function(el) {
-						if (el.textContent === 'Clients') {
-							el.textContent = 'Caisse';
+				// v5.1.1 : Observer tooltip + titre "Clients" → "Caisse"
+				var apObserver = new MutationObserver(function(mutations) {
+					mutations.forEach(function(m) {
+						m.addedNodes.forEach(function(node) {
+							if (node.nodeType === 1) {
+								var popovers = node.querySelectorAll ? node.querySelectorAll('[class*="text-popover-foreground"]') : [];
+								popovers.forEach(function(el) {
+									if (el.textContent === 'Clients') {
+										el.textContent = 'Caisse';
+									}
+								});
+								if (node.textContent === 'Clients' && node.className && node.className.indexOf('text-popover-foreground') > -1) {
+									node.textContent = 'Caisse';
+								}
+							}
+						});
+					});
+					// Titre page et sidebar "Clients" → "Caisse"
+					document.querySelectorAll('[class*="text-sidebar-foreground"], [class*="text-sidebar"] *, [class*="Sidebar"] *').forEach(function(el) {
+						if (el.children.length === 0 && el.textContent.includes('Clients')) {
+							el.textContent = el.textContent.replace('Clients', 'Caisse');
 						}
 					});
 				});
-				apObserver.observe(document.body, { childList: true, subtree: true });
-				console.log('[ap] observer actif (tooltip)');
+				apObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+				console.log('[ap] observer actif (tooltip + titre)');
 			}catch(e){console.error('[ap]',e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 2 — Setup caisse
-	   v5.0.0 : Overlay caissier masqué sur onglets non-POS
-	   v5.0.1 : Appel immédiat de chkCaisse après navigation (fix persistance overlay)
-	   v5.0.2 : Overlay préventif immédiat avant auth (bloque le panier dès le chargement)
-	   v5.0.5 : Exposition showCaissierOverlay, inPOS, currentTab pour triggerChkCaisse
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -183,7 +183,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.10');
+				console.log('[setup] v5.1.1');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -370,11 +370,6 @@ export const createWindow = (): void => {
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
 	}
 
-	/**
-	 * v5.0.1 : Demande au renderer d'exécuter chkCaisse() immédiatement.
-	 * v5.0.5 : Overlay préventif immédiat sur onglet POS avant vérification.
-	 * v5.0.6 : Flag _preventiveShown pour éviter le flickering.
-	 */
 	function triggerChkCaisse(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`
