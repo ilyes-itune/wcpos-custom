@@ -48,7 +48,7 @@ app
 			// forge will handle this in production
 			initProtocolHandling();
 		}
-		registerMenu();
+		//registerMenu();
 		updater.init(); // must be after createWindow
 	})
 	.catch((err) => {
