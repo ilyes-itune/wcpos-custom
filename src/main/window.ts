@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.8';
+const APP_VERSION  = 'WCPOS Custom 5.0.9';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -119,7 +119,7 @@ export const createWindow = (): void => {
 	   BLOC 1 — Anti-pub
 	   v5.0.4 : MutationObserver pour remplacer le tooltip "Clients" → "Caisse"
 	   v5.0.6 : CSS masquage bouton Support
-	   v5.0.8 : Suppression JS du bouton Support (2e SVG viewBox 320 512)
+	   v5.0.9 : Suppression bouton Support intégrée au MutationObserver
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -137,46 +137,31 @@ export const createWindow = (): void => {
 				(document.head||document.documentElement).appendChild(s);
 				console.log('[ap] OK');
 
-				// v5.0.4 : Patch tooltip "Clients" → "Caisse"
-				var tooltipObserver = new MutationObserver(function(mutations) {
-					mutations.forEach(function(m) {
-						m.addedNodes.forEach(function(node) {
-							if (node.nodeType === 1) {
-								var popovers = node.querySelectorAll ? node.querySelectorAll('[class*="text-popover-foreground"]') : [];
-								popovers.forEach(function(el) {
-									if (el.textContent === 'Clients') {
-										el.textContent = 'Caisse';
-										console.log('[ap] tooltip Clients → Caisse');
-									}
-								});
-								if (node.textContent === 'Clients' && node.className && node.className.indexOf('text-popover-foreground') > -1) {
-									node.textContent = 'Caisse';
-									console.log('[ap] tooltip Clients → Caisse (direct)');
-								}
-							}
-						});
+				// v5.0.9 : Observer combiné tooltip + suppression Support
+				var apObserver = new MutationObserver(function() {
+					// Tooltip "Clients" → "Caisse"
+					var popovers = document.querySelectorAll('[class*="text-popover-foreground"]');
+					popovers.forEach(function(el) {
+						if (el.textContent === 'Clients') {
+							el.textContent = 'Caisse';
+						}
 					});
-				});
-				tooltipObserver.observe(document.body, { childList: true, subtree: true });
-				console.log('[ap] tooltip observer actif');
 
-				// v5.0.8 : Suppression du bouton Support (2e SVG viewBox 320 512)
-				setTimeout(function removeSupportBtn(){
-					var allButtons = document.querySelectorAll('nav button[role="button"], [class*="sidebar"] button[role="button"], [class*="Sidebar"] button[role="button"]');
+					// Suppression du bouton Support (2e SVG viewBox 320 512)
 					var foundFirst = false;
-					for (var i = 0; i < allButtons.length; i++) {
-						var btn = allButtons[i];
+					document.querySelectorAll('button[role="button"]').forEach(function(btn) {
 						var svg = btn.querySelector('svg');
 						if (svg && svg.getAttribute('viewBox') === '0 0 320 512') {
 							if (foundFirst) {
 								btn.remove();
-								console.log('[ap] bouton Support supprimé');
 								return;
 							}
 							foundFirst = true;
 						}
-					}
-				}, 1500);
+					});
+				});
+				apObserver.observe(document.body, { childList: true, subtree: true });
+				console.log('[ap] observer actif (tooltip + support)');
 			}catch(e){console.error('[ap]',e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
@@ -197,7 +182,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.8');
+				console.log('[setup] v5.0.9');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
