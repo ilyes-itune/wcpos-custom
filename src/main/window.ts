@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.6';
+const APP_VERSION  = 'WCPOS Custom 5.0.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -36,6 +36,7 @@ export const createWindow = (): void => {
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
 			sandbox: false, nodeIntegration: false, contextIsolation: true,
+			devTools: true,
 		},
 		backgroundColor: '#fff',
 	});
@@ -112,13 +113,15 @@ export const createWindow = (): void => {
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 1 — Anti-pub
 	   v5.0.4 : MutationObserver pour remplacer le tooltip "Clients" → "Caisse"
+	   v5.0.6 : CSS masquage bouton Support
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
 		              'view-demo-button','add-fee','add-shipping','add-misc-product'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
-			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
+			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`
+			+ `,a[href*="/support"],a[href*="support"],[data-testid*="support"]{display:none!important;pointer-events:none!important;height:0!important;overflow:hidden!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__ap||!document||!document.documentElement)return;
 			try{
@@ -369,7 +372,6 @@ export const createWindow = (): void => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`
 			(function(){
-				// v5.0.6 : overlay préventif uniquement si aucun overlay existant ET pas déjà affiché sur cet onglet
 				if(window.inPOS && window.inPOS() && window.showCaissierOverlay){
 					var tab = window.currentTab ? window.currentTab() : null;
 					var POS_TABS = ['products', 'orders'];
