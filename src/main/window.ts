@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'WCPOS Custom 5.0.7';
+const APP_VERSION  = 'WCPOS Custom 5.0.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -43,8 +43,13 @@ export const createWindow = (): void => {
 
 	mainWindow.setMenu(null);
 
-	// v5.0.6 : DevTools toujours ouverts
-	mainWindow.webContents.openDevTools();
+	// v5.0.8 : réactiver Ctrl+Maj+I après suppression du menu
+	mainWindow.webContents.on('before-input-event', (event, input) => {
+		if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+			mainWindow?.webContents.toggleDevTools();
+			event.preventDefault();
+		}
+	});
 
 	/* ── Logging renderer ────────────────────────────────────────────────── */
 	mainWindow.webContents.on('console-message', (_e, level, message, line, src) => {
@@ -114,6 +119,7 @@ export const createWindow = (): void => {
 	   BLOC 1 — Anti-pub
 	   v5.0.4 : MutationObserver pour remplacer le tooltip "Clients" → "Caisse"
 	   v5.0.6 : CSS masquage bouton Support
+	   v5.0.8 : Suppression JS du bouton Support (2e SVG viewBox 320 512)
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -153,6 +159,24 @@ export const createWindow = (): void => {
 				});
 				tooltipObserver.observe(document.body, { childList: true, subtree: true });
 				console.log('[ap] tooltip observer actif');
+
+				// v5.0.8 : Suppression du bouton Support (2e SVG viewBox 320 512)
+				setTimeout(function removeSupportBtn(){
+					var allButtons = document.querySelectorAll('nav button[role="button"], [class*="sidebar"] button[role="button"], [class*="Sidebar"] button[role="button"]');
+					var foundFirst = false;
+					for (var i = 0; i < allButtons.length; i++) {
+						var btn = allButtons[i];
+						var svg = btn.querySelector('svg');
+						if (svg && svg.getAttribute('viewBox') === '0 0 320 512') {
+							if (foundFirst) {
+								btn.remove();
+								console.log('[ap] bouton Support supprimé');
+								return;
+							}
+							foundFirst = true;
+						}
+					}
+				}, 1500);
 			}catch(e){console.error('[ap]',e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
@@ -173,7 +197,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.0.6');
+				console.log('[setup] v5.0.8');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -226,7 +250,6 @@ export const createWindow = (): void => {
 					console.log('[overlay] caissier' + (isInit ? ' (init)' : ''));
 				}
 
-				// v5.0.5 : exposer pour triggerChkCaisse
 				window.showCaissierOverlay = showCaissierOverlay;
 
 				function hideCaissierOverlay(){ var ov = document.getElementById('wco'); if(ov) ov.remove(); }
@@ -302,11 +325,9 @@ export const createWindow = (): void => {
 
 				function navToClients(){ console.log('[wcpos-nav-to] customers'); }
 				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
-				// v5.0.5 : exposer pour triggerChkCaisse
 				window.inPOS = inPOS;
 
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
-				// v5.0.5 : exposer pour triggerChkCaisse
 				window.currentTab = currentTab;
 
 				window.chkCaisse = function chkCaisse(){
