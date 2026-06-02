@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir V5 ';
+const APP_VERSION  = 'POSTir 5.1.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -124,7 +124,6 @@ export const createWindow = (): void => {
 
 	/* ════════════════════════════════════════════════════════════════════════
 	   BLOC 1 — Anti-pub
-	   v5.1.1 : MutationObserver pour tooltip + titre "Clients" → "Caisse"
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -142,7 +141,6 @@ export const createWindow = (): void => {
 				(document.head||document.documentElement).appendChild(s);
 				console.log('[ap] OK');
 
-				// v5.1.1 : Observer tooltip + titre "Clients" → "Caisse"
 				var apObserver = new MutationObserver(function(mutations) {
 					mutations.forEach(function(m) {
 						m.addedNodes.forEach(function(node) {
@@ -159,7 +157,6 @@ export const createWindow = (): void => {
 							}
 						});
 					});
-					// Titre page et sidebar "Clients" → "Caisse"
 					document.querySelectorAll('[class*="text-sidebar-foreground"], [class*="text-sidebar"] *, [class*="Sidebar"] *').forEach(function(el) {
 						if (el.children.length === 0 && el.textContent.includes('Clients')) {
 							el.textContent = el.textContent.replace('Clients', 'Caisse');
@@ -173,7 +170,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse
+	   BLOC 2 — Setup caisse v5.1.3
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -184,11 +181,12 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.1');
+				console.log('[setup] v5.1.3');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
 				var POS_TABS = ['products', 'orders'];
+				var CAISSE_TAB_INDEX = 3;
 
 				function rp(ep,data,cb){
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -197,50 +195,111 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				function showAdminToast(msg, type){
-					var old = document.getElementById('wct');
-					if(old) old.remove();
-					var toast = document.createElement('div');
-					toast.id = 'wct';
-					var bgColor = type==='admin_open' ? '#00a32a' : '#d63638';
-					toast.style.cssText = 'position:fixed;bottom:20px;right:20px;left:20px;max-width:320px;margin-left:auto;'
-						+ 'background:'+bgColor+';color:#fff;padding:12px 20px;border-radius:6px;'
-						+ 'font-size:13px;font-weight:600;z-index:999999;'
-						+ 'box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
-					toast.textContent = msg;
-					document.body.appendChild(toast);
-					console.log('[toast] admin: ' + (type==='admin_open'?'ouverte':'fermee'));
-					setTimeout(function(){ if(toast&&toast.remove) toast.remove(); }, 10000);
-				}
-
-				function hideAdminToast(){ var old = document.getElementById('wct'); if(old) old.remove(); }
-
-				function showCaissierOverlay(msg, isInit){
-					var old = document.getElementById('wco');
-					if(old) old.remove();
-					var navLeft = 56;
+				/* ── Détection sidebar (adaptative) ─ */
+				function getNavLeft(){
+					var navLeft = 50;
 					var sel = ['[class*="TabBar"]','[class*="Sidebar"]','[class*="sidebar"]','nav[class]'];
 					for(var i=0; i<sel.length; i++){
 						var e = document.querySelector(sel[i]);
 						if(e){ var r = e.getBoundingClientRect(); if(r.left===0 && r.width>0 && r.width<200){ navLeft = Math.round(r.right); break; } }
 					}
-					var ov = document.createElement('div');
-					ov.id = 'wco';
-					ov.style.cssText = 'position:fixed;top:0;left:'+navLeft+'px;right:0;bottom:0;z-index:40;'
-						+'background:rgba(20,42,65,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;'
-						+'text-align:center;padding:24px;font-family:sans-serif;color:#fff;';
-					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">' + (isInit ? '&#9203;' : '&#128274;') + '</div>'
-						+'<h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">' + (isInit ? 'Vérification...' : 'Caisse fermée') + '</h2>'
-						+'<p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0 0 20px">'
-						+(msg||(isInit ? 'Vérification de vos droits en cours...' : 'La caisse est fermée. Veuillez l\\'ouvrir avant de continuer.'))+'</p>';
-					document.body.appendChild(ov);
-					console.log('[overlay] caissier' + (isInit ? ' (init)' : ''));
+					return navLeft;
 				}
 
-				window.showCaissierOverlay = showCaissierOverlay;
+				/* ── Onglets sidebar ─ */
+				function getSidebarTabs(){
+					return document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
+				}
 
-				function hideCaissierOverlay(){ var ov = document.getElementById('wco'); if(ov) ov.remove(); }
+				function getActiveTabIndex(){
+					var tabs = getSidebarTabs();
+					for (var i = 0; i < tabs.length; i++) {
+						var btn = tabs[i].closest('button, a');
+						if (!btn) continue;
+						var bg = window.getComputedStyle(btn).backgroundColor;
+						if (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return i;
+					}
+					return -1;
+				}
 
+				/* ── Toast admin (utilise #wcpos-admin-toast du plugin) ─ */
+				function showAdminToast(msg, type){
+					var toast = document.getElementById('wcpos-admin-toast');
+					if (!toast) return;
+					toast.style.display = 'block';
+					toast.className = (type === 'admin_open') ? 'show' : 'show warn';
+					var btn = toast.querySelector('button');
+					if (btn) btn.style.display = 'inline-block';
+					console.log('[toast] admin: ' + (type==='admin_open'?'ouverte':'fermee'));
+				}
+
+				function hideAdminToast(){
+					var toast = document.getElementById('wcpos-admin-toast');
+					if (toast) toast.style.display = 'none';
+				}
+
+				/* ── Overlay caissier (utilise #wcpos-caissier-overlay du plugin) ─ */
+				function showCaissierOverlay(){
+					var overlay = document.getElementById('wcpos-caissier-overlay');
+					if (!overlay) return;
+					var navLeft = getNavLeft();
+					overlay.style.left = navLeft + 'px';
+					overlay.classList.add('show');
+					console.log('[overlay] caissier affiché');
+				}
+
+				function hideCaissierOverlay(){
+					var overlay = document.getElementById('wcpos-caissier-overlay');
+					if (overlay) overlay.classList.remove('show');
+				}
+
+				function blockSidebarTabs(){
+					var tabs = getSidebarTabs();
+					tabs.forEach(function(icon, i) {
+						var btn = icon.closest('button, a');
+						if (!btn) return;
+						if (i !== CAISSE_TAB_INDEX) {
+							btn.style.pointerEvents = 'none';
+							btn.style.opacity = '0.4';
+						} else {
+							btn.style.pointerEvents = '';
+							btn.style.opacity = '';
+						}
+					});
+				}
+
+				function unblockAllTabs(){
+					var tabs = getSidebarTabs();
+					tabs.forEach(function(icon) {
+						var btn = icon.closest('button, a');
+						if (btn) { btn.style.pointerEvents = ''; btn.style.opacity = ''; }
+					});
+				}
+
+				/* ── Mise à jour overlay/toast ─ */
+				function updateCaisseUI(){
+					var activeIdx = getActiveTabIndex();
+
+					if (isAdmin) {
+						hideCaissierOverlay();
+						unblockAllTabs();
+					} else {
+						hideAdminToast();
+						if (!window.CAISSE_OPEN) {
+							blockSidebarTabs();
+							if (activeIdx === CAISSE_TAB_INDEX) {
+								hideCaissierOverlay();
+							} else {
+								showCaissierOverlay();
+							}
+						} else {
+							hideCaissierOverlay();
+							unblockAllTabs();
+						}
+					}
+				}
+
+				/* ── Auth ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
 					'usmm','voir la démo','passer à pro','wcpos',
@@ -298,6 +357,7 @@ export const createWindow = (): void => {
 					}, 500);
 				}
 
+				/* ── Panel loader ─ */
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
@@ -317,6 +377,7 @@ export const createWindow = (): void => {
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
+				/* ── chkCaisse v5.1.3 ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
@@ -330,10 +391,9 @@ export const createWindow = (): void => {
 						sessionStorage.setItem('wcpos_user', currentUser);
 						hideAdminToast();
 						hideCaissierOverlay();
+						unblockAllTabs();
 						isAdmin = false;
-						var tabNow = currentTab();
-						var isPosTabNow = (POS_TABS.indexOf(tabNow) !== -1 || tabNow===null);
-						if(isPosTabNow) showCaissierOverlay(null, true);
+						showCaissierOverlay();
 						initAuth(function(result){ isAdmin = result; console.log('[auth] nouvelle auth: isAdmin=' + isAdmin); window._chkBusy = false; window.chkCaisse(); });
 						return;
 					}
@@ -343,29 +403,52 @@ export const createWindow = (): void => {
 						if(!d||d.error){ window._chkBusy = false; return; }
 						var tab = currentTab();
 						var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab===null);
-						console.log('[caisse] open='+d.open+' tab='+tab+' isAdmin='+isAdmin);
+						window.CAISSE_OPEN = !!(d && d.open);
+						console.log('[caisse] open='+window.CAISSE_OPEN+' tab='+tab+' isAdmin='+isAdmin);
 
 						if(isAdmin){
-							hideCaissierOverlay();
-							if(!d.open) showAdminToast('\\uD83D\\uDD12 Caisse ferm\\u00e9e \\u2013 mode administrateur', 'admin_closed');
-							else showAdminToast('\\uD83D\\uDD13 Caisse ouverte \\u2013 mode administrateur', 'admin_open');
+							if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — mode administrateur', 'admin_closed');
+							else showAdminToast('Caisse ouverte — mode administrateur', 'admin_open');
 						} else if(isPosTab){
 							hideAdminToast();
-							if(!d.open) showCaissierOverlay(d.message);
-							else hideCaissierOverlay();
-						} else {
-							hideCaissierOverlay();
 						}
+						updateCaisseUI();
 						window._chkBusy = false;
 					});
 				};
 
-				var initialTab = currentTab();
-				var initialIsPosTab = (POS_TABS.indexOf(initialTab) !== -1 || initialTab===null);
-				if(initialIsPosTab) showCaissierOverlay(null, true);
+				// Init
+				showCaissierOverlay();
+				blockSidebarTabs();
 
-				initAuth(function(result){ isAdmin = result; console.log('[auth] résultat final: isAdmin=' + isAdmin); window.chkCaisse(); });
+				initAuth(function(result){
+					isAdmin = result;
+					console.log('[auth] résultat final: isAdmin=' + isAdmin);
+					window.chkCaisse();
+				});
+
 				setInterval(function(){ window.chkCaisse(); }, 30000);
+
+				// Écoute les clics sur les onglets pour mise à jour immédiate
+				document.addEventListener('click', function(e){
+					var tabs = getSidebarTabs();
+					var isNav = false;
+					tabs.forEach(function(icon){ if(icon.closest('button, a') === e.target.closest('button, a')) isNav = true; });
+					if (isNav) setTimeout(updateCaisseUI, 300);
+				});
+
+				// Bouton "Ouvrir" dans le toast admin → redirige vers Caisse
+				var toastBtn = document.getElementById('wcpos-toast-open-btn');
+				if (toastBtn) {
+					toastBtn.addEventListener('click', function(){
+						var tabs = getSidebarTabs();
+						if (tabs[CAISSE_TAB_INDEX]) {
+							var btn = tabs[CAISSE_TAB_INDEX].closest('button, a');
+							if (btn) btn.click();
+						}
+					});
+				}
+
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
@@ -375,19 +458,6 @@ export const createWindow = (): void => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`
 			(function(){
-				if(window.inPOS && window.inPOS() && window.showCaissierOverlay){
-					var tab = window.currentTab ? window.currentTab() : null;
-					var POS_TABS = ['products', 'orders'];
-					var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab === null);
-					var existingOverlay = document.getElementById('wco');
-					if(isPosTab && !existingOverlay && !window._preventiveShown){
-						window._preventiveShown = true;
-						window.showCaissierOverlay(null, true);
-					}
-					if(!isPosTab){
-						window._preventiveShown = false;
-					}
-				}
 				if(window.chkCaisse) window.chkCaisse();
 			})();
 		`).catch(() => {});
