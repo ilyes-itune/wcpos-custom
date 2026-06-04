@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.1.4';
+const APP_VERSION  = 'POSTir 5.1.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -305,26 +305,34 @@ export const createWindow = (): void => {
 				}
 
 				function updateCaisseUI(){
-					var activeIdx = getActiveTabIndex();
+    var activeIdx = getActiveTabIndex();
 
-					if (isAdmin) {
-						hideCaissierOverlay();
-						unblockAllTabs();
-					} else {
-						hideAdminToast();
-						if (!window.CAISSE_OPEN) {
-							blockSidebarTabs();
-							if (activeIdx === CAISSE_TAB_INDEX) {
-								hideCaissierOverlay();
-							} else {
-								showCaissierOverlay();
-							}
-						} else {
-							hideCaissierOverlay();
-							unblockAllTabs();
-						}
-					}
-				}
+    if (isAdmin) {
+        hideCaissierOverlay();
+        unblockAllTabs();
+    } else {
+        hideAdminToast();
+        if (!window.CAISSE_OPEN) {
+            blockSidebarTabs();
+            if (activeIdx === CAISSE_TAB_INDEX) {
+                hideCaissierOverlay();
+            } else if (activeIdx === -1) {
+                // Aucun onglet actif détecté → on vérifie l'URL
+                var url = window.location.href.toLowerCase();
+                if (url.indexOf('customers') !== -1) {
+                    hideCaissierOverlay();
+                } else {
+                    showCaissierOverlay();
+                }
+            } else {
+                showCaissierOverlay();
+            }
+        } else {
+            hideCaissierOverlay();
+            unblockAllTabs();
+        }
+    }
+}
 
 				/* ── Auth ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
