@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.1.3';
+const APP_VERSION  = 'POSTir 5.1.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -30,12 +30,21 @@ function tabFromUrl(url: string): string | null {
 
 export const createWindow = (): void => {
 	mainWindow = new BrowserWindow({
-		show: false, width: 1024, height: 728, title: APP_VERSION,
+		show: false,
+		width: 1406,
+		height: 974,
+		resizable: false,
+		maximizable: false,
+		minimizable: true,
+		fullscreenable: false,
+		title: APP_VERSION,
 		icon: path.join(__dirname, '../../icons/icon.ico'),
 		autoHideMenuBar: true,
 		webPreferences: {
 			preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-			sandbox: false, nodeIntegration: false, contextIsolation: true,
+			sandbox: false,
+			nodeIntegration: false,
+			contextIsolation: true,
 			devTools: true,
 		},
 		backgroundColor: '#fff',
@@ -170,7 +179,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.3
+	   BLOC 2 — Setup caisse v5.1.4
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -181,7 +190,7 @@ export const createWindow = (): void => {
 					console.log('[setup] hors POS'); return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.3');
+				console.log('[setup] v5.1.4');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -195,7 +204,7 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
 				}
 
-				/* ── Détection sidebar (adaptative) ─ */
+				/* ── Détection sidebar ─ */
 				function getNavLeft(){
 					var navLeft = 50;
 					var sel = ['[class*="TabBar"]','[class*="Sidebar"]','[class*="sidebar"]','nav[class]'];
@@ -206,7 +215,6 @@ export const createWindow = (): void => {
 					return navLeft;
 				}
 
-				/* ── Onglets sidebar ─ */
 				function getSidebarTabs(){
 					return document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
 				}
@@ -222,35 +230,55 @@ export const createWindow = (): void => {
 					return -1;
 				}
 
+				/* ── Overlay caissier autonome (créé par Electron) ─ */
+				function createOverlay(){
+					var ov = document.getElementById('wcpos-caisse-overlay');
+					if (ov) return ov;
+					ov = document.createElement('div');
+					ov.id = 'wcpos-caisse-overlay';
+					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:rgba(20,42,65,.97);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
+					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">&#128274;</div><h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2><p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0">La caisse est fermée. Veuillez l\\'ouvrir avant de continuer.</p>';
+					document.body.appendChild(ov);
+					console.log('[overlay] élément créé');
+					return ov;
+				}
+
+				var overlayEl = createOverlay();
+
+				function showCaissierOverlay(){
+					if (!overlayEl) overlayEl = createOverlay();
+					if (!overlayEl) return;
+					var navLeft = getNavLeft();
+					overlayEl.style.left = navLeft + 'px';
+					overlayEl.style.right = '0';
+					overlayEl.style.display = 'flex';
+					console.log('[overlay] caissier affiché, navLeft=' + navLeft);
+				}
+
+				function hideCaissierOverlay(){
+					if (overlayEl) overlayEl.style.display = 'none';
+				}
+
 				/* ── Toast admin (utilise #wcpos-admin-toast du plugin) ─ */
 				function showAdminToast(msg, type){
 					var toast = document.getElementById('wcpos-admin-toast');
-					if (!toast) return;
+					if (!toast) {
+						// fallback : créer le toast
+						toast = document.createElement('div');
+						toast.id = 'wcpos-admin-toast';
+						toast.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:999999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
+						document.body.appendChild(toast);
+					}
 					toast.style.display = 'block';
-					toast.className = (type === 'admin_open') ? 'show' : 'show warn';
-					var btn = toast.querySelector('button');
-					if (btn) btn.style.display = 'inline-block';
+					toast.style.background = (type === 'admin_open') ? '#00a32a' : '#d63638';
+					toast.style.color = '#fff';
+					toast.textContent = msg;
 					console.log('[toast] admin: ' + (type==='admin_open'?'ouverte':'fermee'));
 				}
 
 				function hideAdminToast(){
 					var toast = document.getElementById('wcpos-admin-toast');
 					if (toast) toast.style.display = 'none';
-				}
-
-				/* ── Overlay caissier (utilise #wcpos-caissier-overlay du plugin) ─ */
-				function showCaissierOverlay(){
-					var overlay = document.getElementById('wcpos-caissier-overlay');
-					if (!overlay) return;
-					var navLeft = getNavLeft();
-					overlay.style.left = navLeft + 'px';
-					overlay.classList.add('show');
-					console.log('[overlay] caissier affiché');
-				}
-
-				function hideCaissierOverlay(){
-					var overlay = document.getElementById('wcpos-caissier-overlay');
-					if (overlay) overlay.classList.remove('show');
 				}
 
 				function blockSidebarTabs(){
@@ -276,7 +304,6 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Mise à jour overlay/toast ─ */
 				function updateCaisseUI(){
 					var activeIdx = getActiveTabIndex();
 
@@ -377,7 +404,7 @@ export const createWindow = (): void => {
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
-				/* ── chkCaisse v5.1.3 ─ */
+				/* ── chkCaisse v5.1.4 ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
@@ -407,8 +434,8 @@ export const createWindow = (): void => {
 						console.log('[caisse] open='+window.CAISSE_OPEN+' tab='+tab+' isAdmin='+isAdmin);
 
 						if(isAdmin){
-							if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — mode administrateur', 'admin_closed');
-							else showAdminToast('Caisse ouverte — mode administrateur', 'admin_open');
+							if(!window.CAISSE_OPEN) showAdminToast('🔒 Caisse fermée — mode administrateur', 'admin_closed');
+							else showAdminToast('🔓 Caisse ouverte — mode administrateur', 'admin_open');
 						} else if(isPosTab){
 							hideAdminToast();
 						}
@@ -429,25 +456,13 @@ export const createWindow = (): void => {
 
 				setInterval(function(){ window.chkCaisse(); }, 30000);
 
-				// Écoute les clics sur les onglets pour mise à jour immédiate
+				// Écoute les clics sur les onglets
 				document.addEventListener('click', function(e){
 					var tabs = getSidebarTabs();
 					var isNav = false;
 					tabs.forEach(function(icon){ if(icon.closest('button, a') === e.target.closest('button, a')) isNav = true; });
 					if (isNav) setTimeout(updateCaisseUI, 300);
 				});
-
-				// Bouton "Ouvrir" dans le toast admin → redirige vers Caisse
-				var toastBtn = document.getElementById('wcpos-toast-open-btn');
-				if (toastBtn) {
-					toastBtn.addEventListener('click', function(){
-						var tabs = getSidebarTabs();
-						if (tabs[CAISSE_TAB_INDEX]) {
-							var btn = tabs[CAISSE_TAB_INDEX].closest('button, a');
-							if (btn) btn.click();
-						}
-					});
-				}
 
 				console.log('[setup] OK');
 			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
@@ -542,8 +557,14 @@ export const createWindow = (): void => {
 	}, 2000);
 	mainWindow.on('ready-to-show', () => {
 		if (!mainWindow) throw new Error('"mainWindow" is not defined');
-		if (process.env.START_MINIMIZED) { mainWindow.minimize(); mainWindow.show(); }
-		else { mainWindow.maximize(); mainWindow.show(); setTimeout(() => { lastTab = null; onNavigate('ready-maximized'); }, 800); }
+		if (process.env.START_MINIMIZED) {
+			mainWindow.minimize();
+			mainWindow.show();
+		} else {
+			mainWindow.maximize();
+			mainWindow.show();
+			setTimeout(() => { lastTab = null; onNavigate('ready-maximized'); }, 800);
+		}
 	});
 	mainWindow.on('closed', () => { mainWindow = null; });
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
