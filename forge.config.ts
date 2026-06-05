@@ -12,14 +12,14 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const config: ForgeConfig = {
 	packagerConfig: {
-		name: 'WooCommerce POS',
-		executableName: 'WooCommercePOS',
+		name: 'POSTire',
+		executableName: 'POSTire',
 		buildVersion: `${pkg.version}`,
 		icon: path.resolve(__dirname, 'icons', 'icon'),
 		extraResource: [path.resolve(__dirname, 'dist')],
 		protocols: [
 			{
-				name: 'WooCommerce POS',
+				name: 'POSTire ',
 				schemes: ['wcpos'],
 			},
 		],
