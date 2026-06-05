@@ -12,8 +12,8 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const config: ForgeConfig = {
 	packagerConfig: {
-		name: 'POSTire',
-		executableName: 'POSTire',
+		name: 'POSTir',
+		executableName: 'POSTir',
 		buildVersion: `${pkg.version}`,
 		icon: path.resolve(__dirname, 'icons', 'icon'),
 		extraResource: [path.resolve(__dirname, 'dist')],
