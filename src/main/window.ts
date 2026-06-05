@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.1.5';
+const APP_VERSION  = 'POSTir 5.1.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -102,6 +102,7 @@ export const createWindow = (): void => {
 			'*://api.github.com/repos/wcpos/*',
 			'*://*.widgetbot.io/*',
 			'*://widgetbot.io/*',
+			'*://via.placeholder.com/*',
 		] },
 		(_d, cb) => cb({ cancel: true })
 	);
@@ -179,7 +180,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.4
+	   BLOC 2 — Setup caisse v5.1.6
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -187,14 +188,13 @@ export const createWindow = (): void => {
 			if(window.__setup||!document||!document.body)return;
 			try{
 				if(!document.querySelector('[data-testid="search-products"]')){
-					console.log('[setup] hors POS'); return;
+					return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.4');
+				console.log('[setup] v5.1.6');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
-				var POS_TABS = ['products', 'orders'];
 				var CAISSE_TAB_INDEX = 3;
 
 				function rp(ep,data,cb){
@@ -213,21 +213,6 @@ export const createWindow = (): void => {
 						if(e){ var r = e.getBoundingClientRect(); if(r.left===0 && r.width>0 && r.width<200){ navLeft = Math.round(r.right); break; } }
 					}
 					return navLeft;
-				}
-
-				function getSidebarTabs(){
-					return document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
-				}
-
-				function getActiveTabIndex(){
-					var tabs = getSidebarTabs();
-					for (var i = 0; i < tabs.length; i++) {
-						var btn = tabs[i].closest('button, a');
-						if (!btn) continue;
-						var bg = window.getComputedStyle(btn).backgroundColor;
-						if (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return i;
-					}
-					return -1;
 				}
 
 				/* ── Overlay caissier autonome (créé par Electron) ─ */
@@ -259,11 +244,10 @@ export const createWindow = (): void => {
 					if (overlayEl) overlayEl.style.display = 'none';
 				}
 
-				/* ── Toast admin (utilise #wcpos-admin-toast du plugin) ─ */
+				/* ── Toast admin ─ */
 				function showAdminToast(msg, type){
 					var toast = document.getElementById('wcpos-admin-toast');
 					if (!toast) {
-						// fallback : créer le toast
 						toast = document.createElement('div');
 						toast.id = 'wcpos-admin-toast';
 						toast.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:999999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
@@ -279,6 +263,11 @@ export const createWindow = (): void => {
 				function hideAdminToast(){
 					var toast = document.getElementById('wcpos-admin-toast');
 					if (toast) toast.style.display = 'none';
+				}
+
+				/* ── Blocage onglets sidebar ─ */
+				function getSidebarTabs(){
+					return document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
 				}
 
 				function blockSidebarTabs(){
@@ -304,37 +293,32 @@ export const createWindow = (): void => {
 					});
 				}
 
+				/* ── Mise à jour overlay/toast (basée sur URL) ─ */
 				function updateCaisseUI(){
-    var activeIdx = getActiveTabIndex();
+					var url = window.location.href.toLowerCase();
+					var isCaisseTab = (url.indexOf('customers') !== -1);
 
-    if (isAdmin) {
-        hideCaissierOverlay();
-        unblockAllTabs();
-    } else {
-        hideAdminToast();
-        if (!window.CAISSE_OPEN) {
-            blockSidebarTabs();
-            if (activeIdx === CAISSE_TAB_INDEX) {
-                hideCaissierOverlay();
-            } else if (activeIdx === -1) {
-                // Aucun onglet actif détecté → on vérifie l'URL
-                var url = window.location.href.toLowerCase();
-                if (url.indexOf('customers') !== -1) {
-                    hideCaissierOverlay();
-                } else {
-                    showCaissierOverlay();
-                }
-            } else {
-                showCaissierOverlay();
-            }
-        } else {
-            hideCaissierOverlay();
-            unblockAllTabs();
-        }
-    }
-}
+					if (isAdmin) {
+						hideCaissierOverlay();
+						unblockAllTabs();
+					} else {
+						hideAdminToast();
+						if (!window.CAISSE_OPEN) {
+							if (isCaisseTab) {
+								hideCaissierOverlay();
+								unblockAllTabs();
+							} else {
+								blockSidebarTabs();
+								showCaissierOverlay();
+							}
+						} else {
+							hideCaissierOverlay();
+							unblockAllTabs();
+						}
+					}
+				}
 
-				/* ── Auth ─ */
+				/* ── Auth (v5.1.6 : sans polling) ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
 					'usmm','voir la démo','passer à pro','wcpos',
@@ -365,31 +349,48 @@ export const createWindow = (): void => {
 
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
-					if(cached === 'true'){ console.log('[auth] sessionStorage can_edit=true'); callback(true); return; }
+					if(cached === 'true'){
+						console.log('[auth] sessionStorage can_edit=true');
+						callback(true);
+						return;
+					}
+					if(cached === 'false'){
+						console.log('[auth] sessionStorage can_edit=false');
+						callback(false);
+						return;
+					}
 					var domLogin = getUserFromDOM();
 					if(domLogin){
 						console.log('[auth] domLogin =', domLogin);
 						rp('/whoami', {client_login: domLogin}, function(usr){
-							if(usr && usr.can_edit===true){ sessionStorage.setItem('wcpos_can_edit', 'true'); callback(true); }
-							else { startPolling(callback); }
+							if(usr && usr.can_edit===true){
+								sessionStorage.setItem('wcpos_can_edit', 'true');
+								callback(true);
+							} else {
+								sessionStorage.setItem('wcpos_can_edit', 'false');
+								console.log('[auth] can_edit=false (définitif)');
+								callback(false);
+							}
 						});
-					} else { startPolling(callback); }
-				}
-
-				function startPolling(callback){
-					var tries = 0, maxTries = 20;
-					console.log('[auth] polling DOM...');
-					var poll = setInterval(function(){
-						tries++;
-						var dl = getUserFromDOM();
-						if(dl){
-							console.log('[auth] polling trouvé =', dl, '(tentative '+tries+')');
-							rp('/whoami', {client_login: dl}, function(usr){
-								if(usr && usr.can_edit===true){ clearInterval(poll); sessionStorage.setItem('wcpos_can_edit', 'true'); callback(true); }
-							});
-						}
-						if(tries >= maxTries){ clearInterval(poll); console.log('[auth] timeout, can_edit=false'); callback(false); }
-					}, 500);
+					} else {
+						setTimeout(function(){
+							var dl = getUserFromDOM();
+							if(dl){
+								rp('/whoami', {client_login: dl}, function(usr){
+									if(usr && usr.can_edit===true){
+										sessionStorage.setItem('wcpos_can_edit', 'true');
+										callback(true);
+									} else {
+										sessionStorage.setItem('wcpos_can_edit', 'false');
+										callback(false);
+									}
+								});
+							} else {
+								console.log('[auth] aucun login trouvé, can_edit=false');
+								callback(false);
+							}
+						}, 1000);
+					}
 				}
 
 				/* ── Panel loader ─ */
@@ -405,14 +406,13 @@ export const createWindow = (): void => {
 					});
 				};
 
-				function navToClients(){ console.log('[wcpos-nav-to] customers'); }
 				function inPOS(){ return !!document.querySelector('[data-testid="search-products"]'); }
 				window.inPOS = inPOS;
 
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
-				/* ── chkCaisse v5.1.4 ─ */
+				/* ── chkCaisse v5.1.6 ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
@@ -429,22 +429,25 @@ export const createWindow = (): void => {
 						unblockAllTabs();
 						isAdmin = false;
 						showCaissierOverlay();
-						initAuth(function(result){ isAdmin = result; console.log('[auth] nouvelle auth: isAdmin=' + isAdmin); window._chkBusy = false; window.chkCaisse(); });
+						initAuth(function(result){
+							isAdmin = result;
+							console.log('[auth] nouvelle auth: isAdmin=' + isAdmin);
+							window._chkBusy = false;
+							window.chkCaisse();
+						});
 						return;
 					}
 					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
 
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error){ window._chkBusy = false; return; }
-						var tab = currentTab();
-						var isPosTab = (POS_TABS.indexOf(tab) !== -1 || tab===null);
 						window.CAISSE_OPEN = !!(d && d.open);
-						console.log('[caisse] open='+window.CAISSE_OPEN+' tab='+tab+' isAdmin='+isAdmin);
+						console.log('[caisse] open='+window.CAISSE_OPEN+' isAdmin='+isAdmin);
 
 						if(isAdmin){
 							if(!window.CAISSE_OPEN) showAdminToast('🔒 Caisse fermée — mode administrateur', 'admin_closed');
 							else showAdminToast('🔓 Caisse ouverte — mode administrateur', 'admin_open');
-						} else if(isPosTab){
+						} else {
 							hideAdminToast();
 						}
 						updateCaisseUI();
@@ -502,8 +505,8 @@ export const createWindow = (): void => {
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
-				if(!document.querySelector('[data-testid="search-products"]')){ console.log('[panel] hors POS'); return; }
-				if(!window.__setup){ console.log('[panel] setup absent'); return; }
+				if(!document.querySelector('[data-testid="search-products"]')){ return; }
+				if(!window.__setup){ return; }
 				var wppId='wpp-'+tab, wpp=document.getElementById(wppId);
 				if(wpp && wpp.innerHTML.length > 100){
 					document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
