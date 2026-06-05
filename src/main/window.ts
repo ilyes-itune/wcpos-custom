@@ -75,7 +75,7 @@ export const createWindow = (): void => {
 		}
 		if (message.startsWith('[wcpos-nav-to] ')) {
 			const target = message.replace('[wcpos-nav-to] ', '').trim();
-			log.info(`[nav-to] → ${target}`);
+			log.info(`[nav-to] \u2192 ${target}`);
 			if (!mainWindow || mainWindow.isDestroyed()) return;
 			try {
 				const cur = mainWindow.webContents.getURL();
@@ -84,7 +84,7 @@ export const createWindow = (): void => {
 				if (segs.length > 0) segs[segs.length - 1] = target;
 				else segs.push(target);
 				const newUrl = parsed.origin + '/' + segs.join('/');
-				log.info(`[nav-to] ${cur} → ${newUrl}`);
+				log.info(`[nav-to] ${cur} \u2192 ${newUrl}`);
 				lastTab = null;
 				mainWindow.webContents.loadURL(newUrl);
 			} catch (e) { log.error(`[nav-to] ${e}`); }
@@ -95,7 +95,7 @@ export const createWindow = (): void => {
 	mainWindow.webContents.on('unresponsive', () => log.error('[renderer] UNRESPONSIVE'));
 	mainWindow.webContents.on('responsive',   () => log.info ('[renderer] responsive'));
 
-	/* ── Blocage réseau ──────────────────────────────────────────────────── */
+	/* ── Blocage r\u00e9seau ──────────────────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
 		{ urls: [
 			'*://*.novu.co/*','*://novu.co/*',
@@ -135,9 +135,9 @@ export const createWindow = (): void => {
 	loadURL(mainWindow);
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
-	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub + Masquages permanents
-	   ════════════════════════════════════════════════════════════════════════ */
+	/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+	   BLOC 1 \u2014 Anti-pub + Masquages permanents
+	   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
@@ -178,7 +178,6 @@ export const createWindow = (): void => {
 				});
 				apObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-				/* ── Masquer le header Client dans le panier ─ */
 				function hideClientHeader(){
 					var all = document.querySelectorAll('.css-146c3p1');
 					all.forEach(function(el){
@@ -191,7 +190,6 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Masquer le bouton filtres produits ─ */
 				function hideFilterButton(){
 					var filterPaths = document.querySelectorAll('svg path[d*="M0 416c0 17.7"]');
 					filterPaths.forEach(function(path){
@@ -202,22 +200,19 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Masquer le bouton démo login ─ */
 				function hideDemoButton(){
 					var allButtons = document.querySelectorAll('button');
 					allButtons.forEach(function(btn){
-						if(btn.textContent.trim() === 'Entrer dans le magasin de démonstration'){
+						if(btn.textContent.trim() === 'Entrer dans le magasin de d\u00e9monstration'){
 							btn.style.setProperty('display', 'none', 'important');
 						}
 					});
 				}
 
-				// Appels immédiats
 				hideClientHeader();
 				hideFilterButton();
 				hideDemoButton();
 
-				// Observer permanent
 				var permanentObserver = new MutationObserver(function(){
 					hideClientHeader();
 					hideFilterButton();
@@ -225,7 +220,6 @@ export const createWindow = (): void => {
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
 
-				// Tentatives différées
 				setTimeout(hideClientHeader, 1000);
 				setTimeout(hideClientHeader, 3000);
 				setTimeout(hideFilterButton, 1000);
@@ -236,9 +230,9 @@ export const createWindow = (): void => {
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
 
-	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.2.1
-	   ════════════════════════════════════════════════════════════════════════ */
+	/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+	   BLOC 2 \u2014 Setup caisse v5.2.1
+	   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		mainWindow.webContents.executeJavaScript(`(function(){
@@ -260,7 +254,6 @@ export const createWindow = (): void => {
 						.catch(function(e){console.error(e.message);cb({error:e.message});});
 				}
 
-				/* ── Détection sidebar ─ */
 				function getNavLeft(){
 					var navLeft = 50;
 					var sel = ['[class*="TabBar"]','[class*="Sidebar"]','[class*="sidebar"]','nav[class]'];
@@ -280,7 +273,6 @@ export const createWindow = (): void => {
 					return null;
 				}
 
-				/* ── Overlay caissier ─ */
 				function createOverlay(){
 					var ov = document.getElementById('wcpos-caisse-overlay');
 					if (ov) return ov;
@@ -299,9 +291,9 @@ export const createWindow = (): void => {
 						+ '</div>'
 						+ '<style>@keyframes caissePulse{0%,100%{opacity:1;transform:translateX(0)}50%{opacity:.4;transform:translateX(-4px)}}</style>'
 						+ '<div style="margin-bottom:40px">'
-						+ '<div style="width:80px;height:80px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.08);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 28px;font-size:2em">🔒</div>'
-						+ '<h2 style="font-size:1.6em;font-weight:300;letter-spacing:2px;margin:0 0 8px;text-transform:uppercase">Caisse fermée</h2>'
-						+ '<p style="font-size:.85em;color:rgba(255,255,255,.35);max-width:320px;line-height:1.8;margin:0">Sélectionnez l\'onglet <span style="color:rgba(255,255,255,.6);font-weight:500">Caisse</span> pour ouvrir une session.</p>'
+						+ '<div style="width:80px;height:80px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.08);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 28px;font-size:2em">\u{1F512}</div>'
+						+ '<h2 style="font-size:1.6em;font-weight:300;letter-spacing:2px;margin:0 0 8px;text-transform:uppercase">Caisse ferm\u00e9e</h2>'
+						+ '<p style="font-size:.85em;color:rgba(255,255,255,.35);max-width:320px;line-height:1.8;margin:0">S\u00e9lectionnez l\u2019onglet <span style="color:rgba(255,255,255,.6);font-weight:500">Caisse</span> pour ouvrir une session.</p>'
 						+ '</div>'
 						+ '<div style="position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent)"></div>';
 					document.body.appendChild(ov);
@@ -323,7 +315,6 @@ export const createWindow = (): void => {
 					if (overlayEl) overlayEl.style.display = 'none';
 				}
 
-				/* ── Toast admin ─ */
 				function createAdminToast(){
 					var toast = document.getElementById('wcpos-admin-toast');
 					if (!toast) {
@@ -341,7 +332,7 @@ export const createWindow = (): void => {
 					if (!adminToastEl) adminToastEl = createAdminToast();
 					if (!adminToastEl) return;
 					var bg = (type === 'admin_open') ? 'rgba(0,163,42,.85)' : 'rgba(214,54,56,.85)';
-					var icon = (type === 'admin_open') ? '🔓' : '🔒';
+					var icon = (type === 'admin_open') ? '\u{1F513}' : '\u{1F512}';
 					adminToastEl.innerHTML = ''
 						+ '<div style="background:' + bg + ';border-radius:8px;padding:10px 18px;display:flex;align-items:center;gap:10px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4)">'
 						+ '<span style="font-size:1.2em">' + icon + '</span>'
@@ -354,7 +345,6 @@ export const createWindow = (): void => {
 					if (adminToastEl) adminToastEl.style.display = 'none';
 				}
 
-				/* ── Blocage onglets sidebar ─ */
 				function getSidebarTabs(){
 					return document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
 				}
@@ -382,7 +372,6 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Mise à jour overlay/toast ─ */
 				function updateCaisseUI(){
 					var url = window.location.href.toLowerCase();
 					var isCaisseTab = (url.indexOf('customers') !== -1);
@@ -406,10 +395,9 @@ export const createWindow = (): void => {
 					}
 				}
 
-				/* ── Auth ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
-					'en stock','en vedette','en solde','catégorie','étiquette','marque',
-					'usmm','voir la démo','passer à pro','wcpos',
+					'en stock','en vedette','en solde','cat\u00e9gorie','\u00e9tiquette','marque',
+					'usmm','voir la d\u00e9mo','passer \u00e0 pro','wcpos',
 					'pos - usm malakoff tir sportif','version 1.8.11'];
 
 				function getUserFromDOM(){
@@ -419,7 +407,7 @@ export const createWindow = (): void => {
 						var cls = el.className || '';
 						var isLeaf = el.children.length===0;
 						var hasTextBase = cls.indexOf('text-base') > -1;
-						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-Z\u00c0-\u00ff]/.test(txt);
 						if(isLeaf && matchesPattern && hasTextBase && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
 							return txt.toLowerCase();
 						}
@@ -427,7 +415,7 @@ export const createWindow = (): void => {
 					for(var i=0; i<els.length; i++){
 						var el = els[i], txt = (el.textContent||'').trim();
 						var isLeaf = el.children.length===0;
-						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-ZÀ-ÿ]/.test(txt);
+						var matchesPattern = txt.length>=2 && txt.length<=40 && /^[a-zA-Z\u00c0-\u00ff]/.test(txt);
 						if(isLeaf && matchesPattern && KNOWN_LABELS.indexOf(txt.toLowerCase())===-1){
 							return txt.toLowerCase();
 						}
@@ -470,11 +458,10 @@ export const createWindow = (): void => {
 					}
 				}
 
-				/* ── Panel loader ─ */
 				window.__loadPanel=function(pid,wrap,cv,force){
 					if(window.__loadingPanel&&!force)return;
 					window.__loadingPanel=true;
-					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\\u2026</p>';
+					wrap.innerHTML='<p style="padding:20px;color:#646970;font-family:sans-serif">Chargement\u2026</p>';
 					rp('/panel',cv?{panel_id:pid,caisse_view:cv}:{panel_id:pid},function(d){
 						window.__loadingPanel=false;
 						if(!d||!d.html){ wrap.innerHTML='<p style="padding:20px;color:#c00">'+(d&&d.error?d.error:'Erreur')+'</p>'; return; }
@@ -489,7 +476,6 @@ export const createWindow = (): void => {
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
-				/* ── chkCaisse ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
@@ -519,8 +505,8 @@ export const createWindow = (): void => {
 						window.CAISSE_OPEN = !!(d && d.open);
 
 						if(isAdmin){
-							if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — mode administrateur', 'admin_closed');
-							else showAdminToast('Caisse ouverte — mode administrateur', 'admin_open');
+							if(!window.CAISSE_OPEN) showAdminToast('Caisse ferm\u00e9e \u2014 mode administrateur', 'admin_closed');
+							else showAdminToast('Caisse ouverte \u2014 mode administrateur', 'admin_open');
 						} else {
 							hideAdminToast();
 						}
@@ -529,7 +515,6 @@ export const createWindow = (): void => {
 					});
 				};
 
-				// Init
 				showCaissierOverlay();
 				blockSidebarTabs();
 
@@ -560,9 +545,9 @@ export const createWindow = (): void => {
 		`).catch(() => {});
 	}
 
-	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 3 — Panel
-	   ════════════════════════════════════════════════════════════════════════ */
+	/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+	   BLOC 3 \u2014 Panel
+	   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 	function runPanelForTab(tab: string | null): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		if (!tab) {
@@ -571,7 +556,7 @@ export const createWindow = (): void => {
 			})();`).catch(() => {});
 			return;
 		}
-		log.info(`[panel] → ${tab}`);
+		log.info(`[panel] \u2192 ${tab}`);
 		mainWindow.webContents.executeJavaScript(`(function(){
 			try{
 				var tab=${JSON.stringify(tab)};
@@ -610,7 +595,7 @@ export const createWindow = (): void => {
 		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
 	}
 
-	/* ── Orchestration ───────────────────────────────────────────────────── */
+	/* \u2500\u2500 Orchestration \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 	let lastTab: string | null = null;
 	function onNavigate(label: string, url?: string): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
