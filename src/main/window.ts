@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.1.9';
+const APP_VERSION  = 'POSTir 5.2.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -137,7 +137,7 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub
+	   BLOC 1 — Anti-pub + Masquage header Client
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -180,12 +180,33 @@ export const createWindow = (): void => {
 				});
 				apObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 				console.log('[ap] observer actif (tooltip + titre)');
+
+				/* ── Masquer le header Client dans le panier (permanent) ─ */
+				function hideClientHeader(){
+					var all = document.querySelectorAll('.css-146c3p1');
+					all.forEach(function(el){
+						if(el.textContent.trim() === 'Client:'){
+							var header = el.parentElement?.parentElement?.parentElement;
+							if(header && header.style.display !== 'none'){
+								header.style.setProperty('display', 'none', 'important');
+							}
+						}
+					});
+				}
+				hideClientHeader();
+				var clientHeaderObserver = new MutationObserver(function(){
+					hideClientHeader();
+				});
+				clientHeaderObserver.observe(document.body, { childList: true, subtree: true });
+				setTimeout(hideClientHeader, 1000);
+				setTimeout(hideClientHeader, 3000);
+				console.log('[ap] masquage header Client actif');
 			}catch(e){console.error('[ap]',e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.9
+	   BLOC 2 — Setup caisse v5.1.10
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -196,7 +217,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.9');
+				console.log('[setup] v5.1.10');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -220,7 +241,7 @@ export const createWindow = (): void => {
 					return navLeft;
 				}
 
-				/* ── Overlay caissier autonome (créé par Electron) ─ */
+				/* ── Overlay caissier autonome ─ */
 				function createOverlay(){
 					var ov = document.getElementById('wcpos-caisse-overlay');
 					if (ov) return ov;
@@ -229,7 +250,6 @@ export const createWindow = (): void => {
 					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:rgba(20,42,65,.97);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
 					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">&#128274;</div><h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2><p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0">La caisse est fermée. Veuillez l\\'ouvrir avant de continuer.</p>';
 					document.body.appendChild(ov);
-					console.log('[overlay] élément créé');
 					return ov;
 				}
 
@@ -449,29 +469,6 @@ export const createWindow = (): void => {
 					});
 				};
 
-				/* ── Masquer le header Client dans le panier ─ */
-				(function hideClientHeader(){
-					var all = document.querySelectorAll('.css-146c3p1');
-					all.forEach(function(el){
-						if(el.textContent.trim() === 'Client:'){
-							var header = el.parentElement?.parentElement?.parentElement;
-							if(header && header.style.display !== 'none'){
-								header.style.setProperty('display', 'none', 'important');
-							}
-						}
-					});
-					// Continuer à vérifier tant que le header n'est pas masqué
-					var found = false;
-					var all2 = document.querySelectorAll('.css-146c3p1');
-					all2.forEach(function(el){
-						if(el.textContent.trim() === 'Client:'){
-							var h = el.parentElement?.parentElement?.parentElement;
-							if(h && h.style.display === 'none') found = true;
-						}
-					});
-					if(!found) setTimeout(hideClientHeader, 500);
-				})();
-
 				// Init
 				showCaissierOverlay();
 				blockSidebarTabs();
@@ -513,7 +510,6 @@ export const createWindow = (): void => {
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
-				console.log('[panel] tous cachés');
 			})();`).catch(() => {});
 			return;
 		}
@@ -526,7 +522,7 @@ export const createWindow = (): void => {
 				var wppId='wpp-'+tab, wpp=document.getElementById(wppId);
 				if(wpp && wpp.innerHTML.length > 100){
 					document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
-					wpp.style.display = ''; console.log('[panel] affiche '+tab+' (cache)'); return;
+					wpp.style.display = ''; return;
 				}
 				var proContainer=null;
 				var allLeafs=document.querySelectorAll('*');
@@ -538,9 +534,8 @@ export const createWindow = (): void => {
 						if(cr && cr.width > 0){ proContainer=c; break; }
 					}
 				}
-				if(!proContainer){ console.log('[panel] conteneur Pro introuvable'); return; }
+				if(!proContainer){ return; }
 				var r=proContainer.getBoundingClientRect();
-				console.log('[panel] conteneur flex-1 '+tab+': '+Math.round(r.width)+'x'+Math.round(r.height));
 				for(var j=0; j<proContainer.children.length; j++){
 					if(!proContainer.children[j].id.startsWith('wpp-')){ proContainer.children[j].style.display = 'none'; }
 				}
