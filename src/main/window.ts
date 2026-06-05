@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.2.0';
+const APP_VERSION  = 'POSTir 5.2.1';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -52,7 +52,6 @@ export const createWindow = (): void => {
 
 	mainWindow.setMenu(null);
 
-	// v5.0.8 : réactiver Ctrl+Maj+I après suppression du menu
 	mainWindow.webContents.on('before-input-event', (event, input) => {
 		if (input.control && input.shift && input.key.toLowerCase() === 'i') {
 			mainWindow?.webContents.toggleDevTools();
@@ -137,7 +136,7 @@ export const createWindow = (): void => {
 	mainWindow.on('page-title-updated', e => { e.preventDefault(); mainWindow?.setTitle(APP_VERSION); });
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 1 — Anti-pub + Masquage header Client
+	   BLOC 1 — Anti-pub + Masquages permanents
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runAntiPro(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -154,7 +153,6 @@ export const createWindow = (): void => {
 				var s=document.createElement('style');s.id='wcpos-ap';
 				s.textContent=${JSON.stringify(css)};
 				(document.head||document.documentElement).appendChild(s);
-				console.log('[ap] OK');
 
 				var apObserver = new MutationObserver(function(mutations) {
 					mutations.forEach(function(m) {
@@ -179,9 +177,8 @@ export const createWindow = (): void => {
 					});
 				});
 				apObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
-				console.log('[ap] observer actif (tooltip + titre)');
 
-				/* ── Masquer le header Client dans le panier (permanent) ─ */
+				/* ── Masquer le header Client dans le panier ─ */
 				function hideClientHeader(){
 					var all = document.querySelectorAll('.css-146c3p1');
 					all.forEach(function(el){
@@ -193,20 +190,54 @@ export const createWindow = (): void => {
 						}
 					});
 				}
+
+				/* ── Masquer le bouton filtres produits ─ */
+				function hideFilterButton(){
+					var filterPaths = document.querySelectorAll('svg path[d*="M0 416c0 17.7"]');
+					filterPaths.forEach(function(path){
+						var btn = path.closest('button');
+						if(btn && btn.style.display !== 'none'){
+							btn.style.setProperty('display', 'none', 'important');
+						}
+					});
+				}
+
+				/* ── Masquer le bouton démo login ─ */
+				function hideDemoButton(){
+					var allButtons = document.querySelectorAll('button');
+					allButtons.forEach(function(btn){
+						if(btn.textContent.trim() === 'Entrer dans le magasin de démonstration'){
+							btn.style.setProperty('display', 'none', 'important');
+						}
+					});
+				}
+
+				// Appels immédiats
 				hideClientHeader();
-				var clientHeaderObserver = new MutationObserver(function(){
+				hideFilterButton();
+				hideDemoButton();
+
+				// Observer permanent
+				var permanentObserver = new MutationObserver(function(){
 					hideClientHeader();
+					hideFilterButton();
+					hideDemoButton();
 				});
-				clientHeaderObserver.observe(document.body, { childList: true, subtree: true });
+				permanentObserver.observe(document.body, { childList: true, subtree: true });
+
+				// Tentatives différées
 				setTimeout(hideClientHeader, 1000);
 				setTimeout(hideClientHeader, 3000);
-				console.log('[ap] masquage header Client actif');
-			}catch(e){console.error('[ap]',e.message);}
+				setTimeout(hideFilterButton, 1000);
+				setTimeout(hideFilterButton, 3000);
+				setTimeout(hideDemoButton, 1000);
+				setTimeout(hideDemoButton, 3000);
+			}catch(e){console.error(e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.10
+	   BLOC 2 — Setup caisse v5.2.1
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -217,7 +248,6 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.10');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -227,7 +257,7 @@ export const createWindow = (): void => {
 					fetch(REST+ep,{method:'POST',headers:{'Content-Type':'application/json'},
 						body:JSON.stringify(data),credentials:'include'})
 						.then(function(r){return r.json();}).then(cb)
-						.catch(function(e){console.error('[rp]',ep,e.message);cb({error:e.message});});
+						.catch(function(e){console.error(e.message);cb({error:e.message});});
 				}
 
 				/* ── Détection sidebar ─ */
@@ -241,14 +271,39 @@ export const createWindow = (): void => {
 					return navLeft;
 				}
 
-				/* ── Overlay caissier autonome ─ */
+				function getCaisseTabRect(){
+					var tabs = document.querySelectorAll('.css-g5y9jx.web\\\\:whitespace-nowrap.web\\\\:transition-colors.truncate.text-xl.web\\\\:pointer-events-none.inset-0.content-center.items-center');
+					if (tabs.length >= 4) {
+						var btn = tabs[3].closest('button, a');
+						return btn ? btn.getBoundingClientRect() : null;
+					}
+					return null;
+				}
+
+				/* ── Overlay caissier ─ */
 				function createOverlay(){
 					var ov = document.getElementById('wcpos-caisse-overlay');
 					if (ov) return ov;
+
+					var caisseRect = getCaisseTabRect();
+					var arrowTop = caisseRect ? (caisseRect.top + caisseRect.height/2 - 8) : 147;
+					var arrowLeft = caisseRect ? (caisseRect.right + 8) : 70;
+
 					ov = document.createElement('div');
 					ov.id = 'wcpos-caisse-overlay';
-					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:rgba(20,42,65,.97);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
-					ov.innerHTML = '<div style="font-size:3em;margin-bottom:14px">&#128274;</div><h2 style="font-size:1.2em;font-weight:700;margin:0 0 8px">Caisse fermée</h2><p style="font-size:.9em;opacity:.8;max-width:340px;line-height:1.5;margin:0">La caisse est fermée. Veuillez l\\'ouvrir avant de continuer.</p>';
+					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:linear-gradient(180deg, #0f1a2e 0%, #1a2d4a 100%);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
+					ov.innerHTML = ''
+						+ '<div id="caisse-arrow" style="position:fixed;left:' + arrowLeft + 'px;top:' + arrowTop + 'px;display:flex;align-items:center;gap:6px;animation:caissePulse 1.5s ease-in-out infinite">'
+						+ '<svg width="16" height="16" viewBox="0 0 16 16" fill="white" style="opacity:0.8;transform:rotate(180deg)"><path d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06z"/></svg>'
+						+ '<span style="background:rgba(255,255,255,.15);color:#fff;padding:4px 10px;border-radius:6px;font-size:.7em;font-weight:600;white-space:nowrap">Caisse</span>'
+						+ '</div>'
+						+ '<style>@keyframes caissePulse{0%,100%{opacity:1;transform:translateX(0)}50%{opacity:.4;transform:translateX(-4px)}}</style>'
+						+ '<div style="margin-bottom:40px">'
+						+ '<div style="width:80px;height:80px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.08);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 28px;font-size:2em">🔒</div>'
+						+ '<h2 style="font-size:1.6em;font-weight:300;letter-spacing:2px;margin:0 0 8px;text-transform:uppercase">Caisse fermée</h2>'
+						+ '<p style="font-size:.85em;color:rgba(255,255,255,.35);max-width:320px;line-height:1.8;margin:0">Sélectionnez l\'onglet <span style="color:rgba(255,255,255,.6);font-weight:500">Caisse</span> pour ouvrir une session.</p>'
+						+ '</div>'
+						+ '<div style="position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent)"></div>';
 					document.body.appendChild(ov);
 					return ov;
 				}
@@ -269,23 +324,34 @@ export const createWindow = (): void => {
 				}
 
 				/* ── Toast admin ─ */
-				function showAdminToast(msg, type){
+				function createAdminToast(){
 					var toast = document.getElementById('wcpos-admin-toast');
 					if (!toast) {
 						toast = document.createElement('div');
 						toast.id = 'wcpos-admin-toast';
-						toast.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:999999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:sans-serif;';
+						toast.style.cssText = 'position:fixed;top:80px;left:75%;transform:translateX(-50%);z-index:999999;display:none;font-family:-apple-system,sans-serif;';
 						document.body.appendChild(toast);
 					}
-					toast.style.display = 'block';
-					toast.style.background = (type === 'admin_open') ? '#00a32a' : '#d63638';
-					toast.style.color = '#fff';
-					toast.textContent = msg;
+					return toast;
+				}
+
+				var adminToastEl = createAdminToast();
+
+				function showAdminToast(msg, type){
+					if (!adminToastEl) adminToastEl = createAdminToast();
+					if (!adminToastEl) return;
+					var bg = (type === 'admin_open') ? 'rgba(0,163,42,.85)' : 'rgba(214,54,56,.85)';
+					var icon = (type === 'admin_open') ? '🔓' : '🔒';
+					adminToastEl.innerHTML = ''
+						+ '<div style="background:' + bg + ';border-radius:8px;padding:10px 18px;display:flex;align-items:center;gap:10px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4)">'
+						+ '<span style="font-size:1.2em">' + icon + '</span>'
+						+ '<span style="font-size:.8em;font-weight:600;white-space:nowrap">' + msg + '</span>'
+						+ '</div>';
+					adminToastEl.style.display = 'block';
 				}
 
 				function hideAdminToast(){
-					var toast = document.getElementById('wcpos-admin-toast');
-					if (toast) toast.style.display = 'none';
+					if (adminToastEl) adminToastEl.style.display = 'none';
 				}
 
 				/* ── Blocage onglets sidebar ─ */
@@ -316,7 +382,7 @@ export const createWindow = (): void => {
 					});
 				}
 
-				/* ── Mise à jour overlay/toast (basée sur URL) ─ */
+				/* ── Mise à jour overlay/toast ─ */
 				function updateCaisseUI(){
 					var url = window.location.href.toLowerCase();
 					var isCaisseTab = (url.indexOf('customers') !== -1);
@@ -371,14 +437,8 @@ export const createWindow = (): void => {
 
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
-					if(cached === 'true'){
-						callback(true);
-						return;
-					}
-					if(cached === 'false'){
-						callback(false);
-						return;
-					}
+					if(cached === 'true'){ callback(true); return; }
+					if(cached === 'false'){ callback(false); return; }
 					var domLogin = getUserFromDOM();
 					if(domLogin){
 						rp('/whoami', {client_login: domLogin}, function(usr){
@@ -459,8 +519,8 @@ export const createWindow = (): void => {
 						window.CAISSE_OPEN = !!(d && d.open);
 
 						if(isAdmin){
-							if(!window.CAISSE_OPEN) showAdminToast('🔒 Caisse fermée — mode administrateur', 'admin_closed');
-							else showAdminToast('🔓 Caisse ouverte — mode administrateur', 'admin_open');
+							if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — mode administrateur', 'admin_closed');
+							else showAdminToast('Caisse ouverte — mode administrateur', 'admin_open');
 						} else {
 							hideAdminToast();
 						}
@@ -480,7 +540,6 @@ export const createWindow = (): void => {
 
 				setInterval(function(){ window.chkCaisse(); }, 30000);
 
-				// Écoute les clics sur les onglets
 				document.addEventListener('click', function(e){
 					var tabs = getSidebarTabs();
 					var isNav = false;
@@ -488,8 +547,7 @@ export const createWindow = (): void => {
 					if (isNav) setTimeout(updateCaisseUI, 300);
 				});
 
-				console.log('[setup] OK');
-			}catch(e){console.error('[setup] EXCEPTION',e.message,e.stack);}
+			}catch(e){console.error(e.message);}
 		})();`).catch((e: Error) => log.error('[setup] '+e.message));
 	}
 
@@ -535,7 +593,6 @@ export const createWindow = (): void => {
 					}
 				}
 				if(!proContainer){ return; }
-				var r=proContainer.getBoundingClientRect();
 				for(var j=0; j<proContainer.children.length; j++){
 					if(!proContainer.children[j].id.startsWith('wpp-')){ proContainer.children[j].style.display = 'none'; }
 				}
@@ -549,7 +606,7 @@ export const createWindow = (): void => {
 				if(!wpp){ wpp=document.createElement('div'); wpp.id=wppId; proContainer.appendChild(wpp); }
 				wpp.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;min-height:400px;background:#f0f0f1;overflow-y:auto;box-sizing:border-box;z-index:10;';
 				window.__loadPanel(tab, wpp, null, true);
-			}catch(e){console.error('[panel] EXCEPTION',e.message,e.stack);}
+			}catch(e){}
 		})();`).catch((e: Error) => log.error(`[panel] ${e.message}`));
 	}
 
