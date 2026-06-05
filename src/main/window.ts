@@ -64,6 +64,9 @@ export const createWindow = (): void => {
 	mainWindow.webContents.on('console-message', (_e, level, message, line, src) => {
 		const short = (src ?? '').split('/').pop() ?? '';
 		const tag   = `[R ${short}:${line}]`;
+		if (message.includes('Novu') || message.includes('novu') || message.includes('notifications.wcpos')) {
+			return;
+		}
 		if      (level === 3) log.error(`${tag} ${message}`);
 		else if (level === 2) log.warn (`${tag} ${message}`);
 		else                  log.info (`${tag} ${message}`);
@@ -140,7 +143,8 @@ export const createWindow = (): void => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const HIDE = ['upgrade-notice-banner','upgrade-title','upgrade-to-pro-button',
               'view-demo-button','add-fee','add-shipping','add-misc-product',
-              'order-note-button','order-meta-button','save-to-server-button','cart-customer-name'];
+              'order-note-button','order-meta-button','save-to-server-button',
+              'cart-customer-name'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
 			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
@@ -181,7 +185,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.8
+	   BLOC 2 — Setup caisse v5.1.9
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -192,7 +196,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.8');
+				console.log('[setup] v5.1.9');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -238,7 +242,6 @@ export const createWindow = (): void => {
 					overlayEl.style.left = navLeft + 'px';
 					overlayEl.style.right = '0';
 					overlayEl.style.display = 'flex';
-					console.log('[overlay] caissier affiché, navLeft=' + navLeft);
 				}
 
 				function hideCaissierOverlay(){
@@ -258,7 +261,6 @@ export const createWindow = (): void => {
 					toast.style.background = (type === 'admin_open') ? '#00a32a' : '#d63638';
 					toast.style.color = '#fff';
 					toast.textContent = msg;
-					console.log('[toast] admin: ' + (type==='admin_open'?'ouverte':'fermee'));
 				}
 
 				function hideAdminToast(){
@@ -305,7 +307,6 @@ export const createWindow = (): void => {
 					} else {
 						hideAdminToast();
 						if (!window.CAISSE_OPEN) {
-							// Toujours bloquer les onglets sauf Caisse
 							blockSidebarTabs();
 							if (isCaisseTab) {
 								hideCaissierOverlay();
@@ -319,7 +320,7 @@ export const createWindow = (): void => {
 					}
 				}
 
-				/* ── Auth (v5.1.8 : sans polling) ─ */
+				/* ── Auth ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
 					'usmm','voir la démo','passer à pro','wcpos',
@@ -351,25 +352,21 @@ export const createWindow = (): void => {
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
 					if(cached === 'true'){
-						console.log('[auth] sessionStorage can_edit=true');
 						callback(true);
 						return;
 					}
 					if(cached === 'false'){
-						console.log('[auth] sessionStorage can_edit=false');
 						callback(false);
 						return;
 					}
 					var domLogin = getUserFromDOM();
 					if(domLogin){
-						console.log('[auth] domLogin =', domLogin);
 						rp('/whoami', {client_login: domLogin}, function(usr){
 							if(usr && usr.can_edit===true){
 								sessionStorage.setItem('wcpos_can_edit', 'true');
 								callback(true);
 							} else {
 								sessionStorage.setItem('wcpos_can_edit', 'false');
-								console.log('[auth] can_edit=false (définitif)');
 								callback(false);
 							}
 						});
@@ -387,7 +384,6 @@ export const createWindow = (): void => {
 									}
 								});
 							} else {
-								console.log('[auth] aucun login trouvé, can_edit=false');
 								callback(false);
 							}
 						}, 1000);
@@ -413,7 +409,7 @@ export const createWindow = (): void => {
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
-				/* ── chkCaisse v5.1.8 ─ */
+				/* ── chkCaisse ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
@@ -422,7 +418,6 @@ export const createWindow = (): void => {
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
 					if(currentUser && storedUser && currentUser !== storedUser){
-						console.log('[auth] utilisateur changé :', storedUser, '→', currentUser);
 						sessionStorage.removeItem('wcpos_can_edit');
 						sessionStorage.setItem('wcpos_user', currentUser);
 						hideAdminToast();
@@ -432,7 +427,6 @@ export const createWindow = (): void => {
 						showCaissierOverlay();
 						initAuth(function(result){
 							isAdmin = result;
-							console.log('[auth] nouvelle auth: isAdmin=' + isAdmin);
 							window._chkBusy = false;
 							window.chkCaisse();
 						});
@@ -443,7 +437,6 @@ export const createWindow = (): void => {
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error){ window._chkBusy = false; return; }
 						window.CAISSE_OPEN = !!(d && d.open);
-						console.log('[caisse] open='+window.CAISSE_OPEN+' isAdmin='+isAdmin);
 
 						if(isAdmin){
 							if(!window.CAISSE_OPEN) showAdminToast('🔒 Caisse fermée — mode administrateur', 'admin_closed');
@@ -456,13 +449,35 @@ export const createWindow = (): void => {
 					});
 				};
 
+				/* ── Masquer le header Client dans le panier ─ */
+				(function hideClientHeader(){
+					var all = document.querySelectorAll('.css-146c3p1');
+					all.forEach(function(el){
+						if(el.textContent.trim() === 'Client:'){
+							var header = el.parentElement?.parentElement?.parentElement;
+							if(header && header.style.display !== 'none'){
+								header.style.setProperty('display', 'none', 'important');
+							}
+						}
+					});
+					// Continuer à vérifier tant que le header n'est pas masqué
+					var found = false;
+					var all2 = document.querySelectorAll('.css-146c3p1');
+					all2.forEach(function(el){
+						if(el.textContent.trim() === 'Client:'){
+							var h = el.parentElement?.parentElement?.parentElement;
+							if(h && h.style.display === 'none') found = true;
+						}
+					});
+					if(!found) setTimeout(hideClientHeader, 500);
+				})();
+
 				// Init
 				showCaissierOverlay();
 				blockSidebarTabs();
 
 				initAuth(function(result){
 					isAdmin = result;
-					console.log('[auth] résultat final: isAdmin=' + isAdmin);
 					window.chkCaisse();
 				});
 
