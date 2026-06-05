@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.1.7';
+const APP_VERSION  = 'POSTir 5.1.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -95,19 +95,18 @@ export const createWindow = (): void => {
 
 	/* ── Blocage réseau ──────────────────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
-		mainWindow.webContents.session.webRequest.onBeforeRequest(
-    { urls: [
-        '*://*.novu.co/*','*://novu.co/*',
-        '*://updates.wcpos.com/*',
-        '*://wcpos.com/*','*://*.wcpos.com/*',
-        '*://api.github.com/repos/wcpos/*',
-        '*://*.widgetbot.io/*',
-        '*://widgetbot.io/*',
-        '*://via.placeholder.com/*',
-        '*://api.notifications.wcpos.com/*',
-    ] },
-    (_d, cb) => cb({ cancel: true })
-);
+		{ urls: [
+			'*://*.novu.co/*','*://novu.co/*',
+			'*://updates.wcpos.com/*',
+			'*://wcpos.com/*','*://*.wcpos.com/*',
+			'*://api.github.com/repos/wcpos/*',
+			'*://*.widgetbot.io/*',
+			'*://widgetbot.io/*',
+			'*://via.placeholder.com/*',
+			'*://api.notifications.wcpos.com/*',
+		] },
+		(_d, cb) => cb({ cancel: true })
+	);
 
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
@@ -182,7 +181,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ════════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.1.7
+	   BLOC 2 — Setup caisse v5.1.8
 	   ════════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -193,7 +192,7 @@ export const createWindow = (): void => {
 					return;
 				}
 				window.__setup=true;
-				console.log('[setup] v5.1.7');
+				console.log('[setup] v5.1.8');
 
 				var REST=${JSON.stringify(WP_REST_BASE)};
 				var isAdmin = false;
@@ -320,7 +319,7 @@ export const createWindow = (): void => {
 					}
 				}
 
-				/* ── Auth (v5.1.7 : sans polling) ─ */
+				/* ── Auth (v5.1.8 : sans polling) ─ */
 				var KNOWN_LABELS = ['pos','produits','commandes','clients','rapports','journaux','support',
 					'en stock','en vedette','en solde','catégorie','étiquette','marque',
 					'usmm','voir la démo','passer à pro','wcpos',
@@ -414,7 +413,7 @@ export const createWindow = (): void => {
 				function currentTab(){ var u=window.location.href.toLowerCase(); var tabs=['products','orders','customers','reports']; for(var i=0;i<tabs.length;i++){if(u.indexOf(tabs[i])!==-1)return tabs[i];} return null; }
 				window.currentTab = currentTab;
 
-				/* ── chkCaisse v5.1.7 ─ */
+				/* ── chkCaisse v5.1.8 ─ */
 				window.chkCaisse = function chkCaisse(){
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
