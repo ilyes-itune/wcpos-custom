@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.2.1';
+const APP_VERSION  = 'POSTir 5.2.1-admin';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -522,6 +522,95 @@ export const createWindow = (): void => {
 					isAdmin = result;
 					window.chkCaisse();
 				});
+				// ═══════════════════════════════════════════════════════════════
+// ADMIN CREDENTIALS CLEANUP
+// Force les admins à re-saisir leur mot de passe à chaque connexion
+// ═══════════════════════════════════════════════════════════════
+
+// UUID des credentials admin dans la base RxDB (trouvé dans le fichier SQLite)
+var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c'; // Ilyes
+var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a'; // caissier
+
+function clearAdminCredentials() {
+    try {
+        var request = indexedDB.open('rxdbwcposusers_v2');
+        request.onsuccess = function(e) {
+            var db = e.target.result;
+            
+            // Vérifier si la table wp_credentials-1 existe
+            if (!db.objectStoreNames.contains('wp_credentials-1')) {
+                console.log('[admin-cleanup] Table wp_credentials-1 non trouvée');
+                db.close();
+                return;
+            }
+            
+            var tx = db.transaction('wp_credentials-1', 'readwrite');
+            var store = tx.objectStore('wp_credentials-1');
+            
+            // Supprimer UNIQUEMENT les credentials admin
+            var deleteRequest = store.delete(ADMIN_CREDENTIALS_UUID);
+            
+            deleteRequest.onsuccess = function() {
+                console.log('[admin-cleanup] Credentials admin supprimés avec succès');
+            };
+            
+            deleteRequest.onerror = function(err) {
+                console.log('[admin-cleanup] Erreur suppression credentials admin:', err);
+            };
+            
+            tx.oncomplete = function() {
+                console.log('[admin-cleanup] Transaction terminée');
+                db.close();
+            };
+            
+            tx.onerror = function(err) {
+                console.log('[admin-cleanup] Erreur transaction:', err);
+                db.close();
+            };
+        };
+        
+        request.onerror = function(err) {
+            console.log('[admin-cleanup] Impossible d\'ouvrir la base RxDB:', err);
+        };
+        
+    } catch(e) {
+        console.log('[admin-cleanup] Erreur:', e.message);
+    }
+}
+
+// Vérifier si l'utilisateur actuel est admin et déclencher le nettoyage
+function checkAndCleanAdmin(username) {
+    // Liste des noms d'utilisateur admin
+    var ADMIN_USERNAMES = ['ilyes']; // Ajouter d'autres admins si nécessaire
+    
+    if (ADMIN_USERNAMES.includes(username.toLowerCase())) {
+        console.log('[admin-cleanup] Admin détecté : ' + username + ' - nettoyage des credentials');
+        // Petit délai pour laisser le temps à la déconnexion de se terminer
+        setTimeout(function() {
+            clearAdminCredentials();
+        }, 500);
+    }
+}
+
+// Observer les changements d'utilisateur dans sessionStorage
+var lastKnownUser = sessionStorage.getItem('wcpos_user');
+setInterval(function() {
+    var currentUser = sessionStorage.getItem('wcpos_user');
+    if (currentUser && currentUser !== lastKnownUser) {
+        // L'utilisateur a changé
+        if (!currentUser) {
+            // Déconnexion détectée, vérifier si c'était un admin
+            checkAndCleanAdmin(lastKnownUser);
+        }
+        lastKnownUser = currentUser;
+    }
+}, 1000);
+
+// Aussi vérifier au démarrage si un admin est déjà connecté
+var storedUser = sessionStorage.getItem('wcpos_user');
+if (storedUser) {
+    console.log('[admin-cleanup] Utilisateur au démarrage : ' + storedUser);
+}
 
 				setInterval(function(){ window.chkCaisse(); }, 30000);
 
