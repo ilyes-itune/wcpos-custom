@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.2.2';
+const APP_VERSION  = 'POSTir 5.2.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -129,9 +129,13 @@ export const createWindow = (): void => {
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			// Ne pas modifier les headers de réponse de l'iframe de paiement
+			/* v5.2.3 : wcpos-checkout a besoin de CORS pour que l'app React
+			 * puisse accéder à contentWindow de l'iframe et envoyer postMessage */
 			if (d.url.includes('/wcpos-checkout/')) {
-				cb({ responseHeaders: d.responseHeaders });
+				const hc: Record<string,string[]> = { ...(d.responseHeaders ?? {}) as Record<string,string[]> };
+				hc['Access-Control-Allow-Origin']      = ['wcpos://-'];
+				hc['Access-Control-Allow-Credentials'] = ['true'];
+				cb({ responseHeaders: hc });
 				return;
 			}
 			const h: Record<string,string[]> = {};
