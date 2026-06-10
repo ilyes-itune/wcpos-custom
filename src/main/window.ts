@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.2.3';
+const APP_VERSION  = 'POSTir 5.2.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -46,6 +46,7 @@ export const createWindow = (): void => {
 			nodeIntegration: false,
 			contextIsolation: true,
 			devTools: true,
+			webSecurity: false, // v5.2.4 : autorise postMessage cross-origin wcpos://-→usmm-tir.fr (iframe paiement)
 		},
 		backgroundColor: '#fff',
 	});
