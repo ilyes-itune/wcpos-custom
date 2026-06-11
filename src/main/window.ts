@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.2.4';
+const APP_VERSION  = 'POSTir 5.2.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -248,6 +248,26 @@ export const createWindow = (): void => {
 				setTimeout(hideFilterButton, 3000);
 				setTimeout(hideDemoButton, 1000);
 				setTimeout(hideDemoButton, 3000);
+
+				// v5.2.5 : Intercepte clic "Payer" et envoie postMessage à l'iframe
+				if(!window.__paymentListenerBound){
+					window.__paymentListenerBound = true;
+					document.addEventListener('click', function(e){
+						var t = e.target;
+						var btn = t && t.closest ? t.closest('[data-testid="process-payment-button"]') : null;
+						if(!btn) return;
+						console.log('[wcpos-pay] clic process-payment détecté');
+						setTimeout(function(){
+							var iframe = document.querySelector('iframe');
+							if(iframe && iframe.contentWindow){
+								console.log('[wcpos-pay] postMessage envoyé');
+								iframe.contentWindow.postMessage({action:'wcpos-process-payment'},'*');
+							} else {
+								console.log('[wcpos-pay] iframe non trouvée');
+							}
+						}, 300);
+					}, true);
+				}
 			}catch(e){console.error(e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
 	}
