@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.5';
+const APP_VERSION  = 'POSTir 5.3.6';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -96,9 +96,13 @@ export const createWindow = (): void => {
 	mainWindow.webContents.on('unresponsive', () => log.error('[renderer] UNRESPONSIVE'));
 	mainWindow.webContents.on('responsive',   () => log.info ('[renderer] responsive'));
 
-	/* ── Blocage réseau ──────────────────────────────────────────────────── */
+	/* ── Blocage réseau + interception order-pay ────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
 		{ urls: [
+			// v5.3.5 : order-pay annulé — empêche la page WC de charger
+			// (évite "déjà payée" + empêche onLoad → pas de timer fallback PY02001)
+			// Les infos de commande sont stockées pour le clic "Payer"
+			'https://usmm-tir.fr/wcpos-checkout/order-pay/*',
 			'*://*.novu.co/*','*://novu.co/*',
 			'*://updates.wcpos.com/*',
 			'*://wcpos.com/*','*://*.wcpos.com/*',
@@ -108,77 +112,39 @@ export const createWindow = (): void => {
 			'*://via.placeholder.com/*',
 			'*://api.notifications.wcpos.com/*',
 		] },
-		(_d, cb) => cb({ cancel: true })
-	);
-
-	/* ── v5.3.2 : onBeforeSendHeaders ───────────────────────────────────── *
-	 * 1. /wcpos-checkout/order-pay/* → interception paiement POS            *
-	 *    · fetch REST /pay-order (même renderer → cookies OK)               *
-	 *    · dispatchEvent avec source = iframe.contentWindow                  *
-	 *      (webSecurity:false → accès cross-origin autorisé)                *
-	 *      satisfait le check event.source de WCPOS                         *
-	 * 2. /wcpos-checkout/* générique → pass-through sans modifier Origin    *
-	 * 3. Reste → injecte Origin: wcpos://-                                  */
-	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
-		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			// ── 1. Checkout order-pay ─────────────────────────────────────────
 			if (d.url.includes('/wcpos-checkout/order-pay/')) {
-				cb({ requestHeaders: d.requestHeaders });
-
+				cb({ cancel: true });
 				const mId  = d.url.match(/order-pay\/(\d+)/);
 				const mKey = d.url.match(/[?&]key=([^&]+)/);
 				const oid  = mId  ? parseInt(mId[1], 10) : 0;
 				const okey = mKey ? decodeURIComponent(mKey[1]) : '';
-
 				if (oid && mainWindow && !mainWindow.isDestroyed()) {
-					log.info(`[wcpos-pay] order-pay intercepté oid=${oid}`);
-					setTimeout(() => {
-						if (!mainWindow || mainWindow.isDestroyed()) return;
-						const restUrl  = JSON.stringify(WP_REST_BASE + '/pay-order');
-						const okeyJson = JSON.stringify(okey);
-						mainWindow.webContents.executeJavaScript(`(function(){
-							if(!window.__payProcessed)window.__payProcessed={};
-							if(window.__payProcessed[${oid}])return;
-							window.__payProcessed[${oid}]=true;
-							console.log('[wcpos-pay] fetch /pay-order oid=${oid}');
-							fetch(${restUrl},{
-								method:'POST',
-								body:JSON.stringify({order_id:${oid},order_key:${okeyJson}}),
-								headers:{'Content-Type':'application/json'},
-								credentials:'include'
-							})
-							.then(function(r){return r.json();})
-							.then(function(data){
-								console.log('[wcpos-pay] REST \u2192',JSON.stringify(data));
-								if(data&&data.id){
-									// v5.3.4 : format wcpos-payment-received + object (pas JSON string)
-									// data contient l'ordre WC complet (avec uuid via /wc/v3/orders)
-									var iframe = document.querySelector('iframe[src*="order-pay"]')
-									          || document.querySelector('iframe[src*="wcpos-checkout"]');
-									var iframeWin = iframe ? iframe.contentWindow : null;
-									window.dispatchEvent(new MessageEvent('message',{
-										data:   { action: 'wcpos-payment-received', payload: data },
-										origin: 'https://usmm-tir.fr',
-										source: iframeWin || window
-									}));
-									console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received id='+data.id+' status='+data.status);
-								}
-							})
-							.catch(function(e){console.error('[wcpos-pay] Erreur:',e.message);});
-						})();`).catch((e: Error) => log.error('[wcpos-pay] ' + e.message));
-					}, 50);
+					log.info(`[wcpos-pay] order-pay annulé, commande en attente oid=${oid}`);
+					mainWindow.webContents.executeJavaScript(
+						`if(!window.__pendingPayment)window.__pendingPayment={};` +
+						`window.__pendingPayment[${oid}]=${JSON.stringify({ oid, okey })};` +
+						`console.log('[wcpos-pay] commande en attente oid=${oid}');`
+					).catch(() => {});
 				}
 				return;
 			}
+			cb({ cancel: true });
+		}
+	);
 
-			// ── 2. /wcpos-checkout/* générique : pass-through ────────────────
+	/* ── v5.3.5 : onBeforeSendHeaders ───────────────────────────────────── *
+	 * order-pay est maintenant annulé dans onBeforeRequest                  *
+	 * → seul le pass-through wcpos-checkout et l'injection Origin restent  */
+	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+		{ urls: [WP_SITE_URL + '/*'] },
+		(d, cb) => {
+			// /wcpos-checkout/* : pass-through sans modifier Origin
 			if (d.url.includes('/wcpos-checkout/')) {
 				cb({ requestHeaders: d.requestHeaders });
 				return;
 			}
-
-			// ── 3. Reste du site WP : injecte Origin: wcpos://- ──────────────
+			// Reste du site WP : injecte Origin: wcpos://-
 			cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } });
 		}
 	);
@@ -186,21 +152,6 @@ export const createWindow = (): void => {
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			// ── v5.3.4 : order-pay → about:blank ────────────────────────────────
-			// Redirige l'iframe vers about:blank dès la réponse du serveur.
-			// Empêche la page WooCommerce "commande déjà payée" de se charger
-			// et d'envoyer un message d'erreur qui écraserait notre succès.
-			if (d.url.includes('/wcpos-checkout/order-pay/') && d.statusCode === 200) {
-				cb({
-					statusLine: 'HTTP/1.1 302 Found',
-					responseHeaders: {
-						...((d.responseHeaders ?? {}) as Record<string,string[]>),
-						'location': ['about:blank'],
-					},
-				});
-				return;
-			}
-
 			/* v5.2.3 : wcpos-checkout a besoin de CORS pour que l'app React
 			 * puisse accéder à contentWindow de l'iframe et envoyer postMessage */
 			if (d.url.includes('/wcpos-checkout/')) {
@@ -319,6 +270,52 @@ export const createWindow = (): void => {
 				setTimeout(hideFilterButton, 3000);
 				setTimeout(hideDemoButton, 1000);
 				setTimeout(hideDemoButton, 3000);
+
+				// v5.3.5 : Paiement déclenché au clic "Payer" (pas à l'ouverture du checkout)
+				// La requête order-pay est annulée dans onBeforeRequest (pas de page WC chargée)
+				// __pendingPayment est rempli dans onBeforeRequest via executeJavaScript
+				if(!window.__payClickBound){
+					window.__payClickBound=true;
+					document.addEventListener('click',function(e){
+						var btn=e.target&&e.target.closest?e.target.closest('[data-testid="process-payment-button"]'):null;
+						if(!btn)return;
+						var pending=window.__pendingPayment;
+						if(!pending)return;
+						var keys=Object.keys(pending);
+						if(!keys.length)return;
+						var oid=parseInt(keys[keys.length-1],10);
+						var p=pending[oid];
+						if(!p||!p.oid)return;
+						if(!window.__payProcessed)window.__payProcessed={};
+						if(window.__payProcessed[oid])return;
+						window.__payProcessed[oid]=true;
+						delete pending[oid];
+						console.log('[wcpos-pay] clic Payer oid='+oid);
+						fetch(${JSON.stringify(WP_REST_BASE+'/pay-order')},{
+							method:'POST',
+							body:JSON.stringify({order_id:oid,order_key:p.okey||''}),
+							headers:{'Content-Type':'application/json'},
+							credentials:'include'
+						})
+						.then(function(r){return r.json();})
+						.then(function(data){
+							console.log('[wcpos-pay] REST \u2192',JSON.stringify(data));
+							if(data&&data.id){
+								var iframe=document.querySelector('iframe[src*="order-pay"]')
+								        ||document.querySelector('iframe[src*="wcpos-checkout"]')
+								        ||document.querySelector('iframe');
+								var iframeWin=iframe?iframe.contentWindow:null;
+								window.dispatchEvent(new MessageEvent('message',{
+									data:{action:'wcpos-payment-received',payload:data},
+									origin:'https://usmm-tir.fr',
+									source:iframeWin||window
+								}));
+								console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received id='+data.id);
+							}
+						})
+						.catch(function(e){console.error('[wcpos-pay]',e.message);});
+					},true);
+				}
 
 			}catch(e){console.error(e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
