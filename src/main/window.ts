@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.2';
+const APP_VERSION  = 'POSTir 5.3.3';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -160,15 +160,14 @@ export const createWindow = (): void => {
 									// v5.3.2 : source = iframe.contentWindow
 									// webSecurity:false autorise l'accès cross-origin
 									// satisfait le check event.source !== iframeRef.current?.contentWindow de WCPOS
-									var iframe = document.querySelector('iframe[src*="order-pay"]')
-									          || document.querySelector('iframe[src*="wcpos-checkout"]');
+									// APRÈS — objet + format wcpos-payment-received
+									var iframe = document.querySelector('iframe[src*="order-pay"]') || document.querySelector('iframe[src*="wcpos-checkout"]');
 									var iframeWin = iframe ? iframe.contentWindow : null;
-									window.dispatchEvent(new MessageEvent('message',{
-										data:   msg,
-										origin: 'https://usmm-tir.fr',
-										source: iframeWin || window
+									window.dispatchEvent(new MessageEvent('message',{ data: { action: 'wcpos-payment-received', payload: data },
+   									origin: 'https://usmm-tir.fr',
+    								source: iframeWin || window
 									}));
-									console.log('[wcpos-pay] dispatchEvent \u2713 src='+(iframeWin?'iframe.contentWindow':'window'),msg);
+									console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received', data.id, data.status);
 								}
 							})
 							.catch(function(e){console.error('[wcpos-pay] Erreur:',e.message);});
