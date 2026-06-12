@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.4';
+const APP_VERSION  = 'POSTir 5.3.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -152,22 +152,17 @@ export const createWindow = (): void => {
 							.then(function(data){
 								console.log('[wcpos-pay] REST \u2192',JSON.stringify(data));
 								if(data&&data.id){
-									var msg=JSON.stringify({
-										result:'success',
-										redirect:data.redirect||'',
-										order_id:${oid}
-									});
-									// v5.3.2 : source = iframe.contentWindow
-									// webSecurity:false autorise l'accès cross-origin
-									// satisfait le check event.source !== iframeRef.current?.contentWindow de WCPOS
-									// APRÈS — objet + format wcpos-payment-received
-									var iframe = document.querySelector('iframe[src*="order-pay"]') || document.querySelector('iframe[src*="wcpos-checkout"]');
+									// v5.3.4 : format wcpos-payment-received + object (pas JSON string)
+									// data contient l'ordre WC complet (avec uuid via /wc/v3/orders)
+									var iframe = document.querySelector('iframe[src*="order-pay"]')
+									          || document.querySelector('iframe[src*="wcpos-checkout"]');
 									var iframeWin = iframe ? iframe.contentWindow : null;
-									window.dispatchEvent(new MessageEvent('message',{ data: { action: 'wcpos-payment-received', payload: data },
-   									origin: 'https://usmm-tir.fr',
-    								source: iframeWin || window
+									window.dispatchEvent(new MessageEvent('message',{
+										data:   { action: 'wcpos-payment-received', payload: data },
+										origin: 'https://usmm-tir.fr',
+										source: iframeWin || window
 									}));
-									console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received', data.id, data.status);
+									console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received id='+data.id+' status='+data.status);
 								}
 							})
 							.catch(function(e){console.error('[wcpos-pay] Erreur:',e.message);});
@@ -191,6 +186,21 @@ export const createWindow = (): void => {
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
+			// ── v5.3.4 : order-pay → about:blank ────────────────────────────────
+			// Redirige l'iframe vers about:blank dès la réponse du serveur.
+			// Empêche la page WooCommerce "commande déjà payée" de se charger
+			// et d'envoyer un message d'erreur qui écraserait notre succès.
+			if (d.url.includes('/wcpos-checkout/order-pay/') && d.statusCode === 200) {
+				cb({
+					statusLine: 'HTTP/1.1 302 Found',
+					responseHeaders: {
+						...((d.responseHeaders ?? {}) as Record<string,string[]>),
+						'location': ['about:blank'],
+					},
+				});
+				return;
+			}
+
 			/* v5.2.3 : wcpos-checkout a besoin de CORS pour que l'app React
 			 * puisse accéder à contentWindow de l'iframe et envoyer postMessage */
 			if (d.url.includes('/wcpos-checkout/')) {
