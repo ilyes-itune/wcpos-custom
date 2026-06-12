@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.1';
+const APP_VERSION  = 'POSTir 5.3.2';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -111,16 +111,18 @@ export const createWindow = (): void => {
 		(_d, cb) => cb({ cancel: true })
 	);
 
-	/* ── v5.3.1 : onBeforeSendHeaders ───────────────────────────────────── *
+	/* ── v5.3.2 : onBeforeSendHeaders ───────────────────────────────────── *
 	 * 1. /wcpos-checkout/order-pay/* → interception paiement POS            *
-	 *    Appelle /pay-order via executeJavaScript (même renderer que WCPOS)  *
-	 *    puis dispatchEvent MessageEvent sur window → listener WCPOS reçoit  *
-	 * 2. /wcpos-checkout/* générique → pass-through sans modifier Origin     *
-	 * 3. Reste → injecte Origin: wcpos://-                                   */
+	 *    · fetch REST /pay-order (même renderer → cookies OK)               *
+	 *    · dispatchEvent avec source = iframe.contentWindow                  *
+	 *      (webSecurity:false → accès cross-origin autorisé)                *
+	 *      satisfait le check event.source de WCPOS                         *
+	 * 2. /wcpos-checkout/* générique → pass-through sans modifier Origin    *
+	 * 3. Reste → injecte Origin: wcpos://-                                  */
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			// ── 1. Checkout order-pay : interception paiement (avant check générique) ──
+			// ── 1. Checkout order-pay ─────────────────────────────────────────
 			if (d.url.includes('/wcpos-checkout/order-pay/')) {
 				cb({ requestHeaders: d.requestHeaders });
 
@@ -133,7 +135,7 @@ export const createWindow = (): void => {
 					log.info(`[wcpos-pay] order-pay intercepté oid=${oid}`);
 					setTimeout(() => {
 						if (!mainWindow || mainWindow.isDestroyed()) return;
-						const restUrl = JSON.stringify(WP_REST_BASE + '/pay-order');
+						const restUrl  = JSON.stringify(WP_REST_BASE + '/pay-order');
 						const okeyJson = JSON.stringify(okey);
 						mainWindow.webContents.executeJavaScript(`(function(){
 							if(!window.__payProcessed)window.__payProcessed={};
@@ -155,12 +157,18 @@ export const createWindow = (): void => {
 										redirect:data.redirect||'',
 										order_id:${oid}
 									});
+									// v5.3.2 : source = iframe.contentWindow
+									// webSecurity:false autorise l'accès cross-origin
+									// satisfait le check event.source !== iframeRef.current?.contentWindow de WCPOS
+									var iframe = document.querySelector('iframe[src*="order-pay"]')
+									          || document.querySelector('iframe[src*="wcpos-checkout"]');
+									var iframeWin = iframe ? iframe.contentWindow : null;
 									window.dispatchEvent(new MessageEvent('message',{
-										data:msg,
-										origin:'https://usmm-tir.fr',
-										source:window
+										data:   msg,
+										origin: 'https://usmm-tir.fr',
+										source: iframeWin || window
 									}));
-									console.log('[wcpos-pay] dispatchEvent \u2713',msg);
+									console.log('[wcpos-pay] dispatchEvent \u2713 src='+(iframeWin?'iframe.contentWindow':'window'),msg);
 								}
 							})
 							.catch(function(e){console.error('[wcpos-pay] Erreur:',e.message);});
@@ -170,13 +178,13 @@ export const createWindow = (): void => {
 				return;
 			}
 
-			// ── 2. /wcpos-checkout/* générique : pass-through sans modifier Origin ──
+			// ── 2. /wcpos-checkout/* générique : pass-through ────────────────
 			if (d.url.includes('/wcpos-checkout/')) {
 				cb({ requestHeaders: d.requestHeaders });
 				return;
 			}
 
-			// ── 3. Reste du site WP : injecte Origin: wcpos://- ──
+			// ── 3. Reste du site WP : injecte Origin: wcpos://- ──────────────
 			cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } });
 		}
 	);
