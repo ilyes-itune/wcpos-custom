@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.3';
+const APP_VERSION  = 'POSTir 5.3.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -151,7 +151,7 @@ export const createWindow = (): void => {
 							.then(function(r){return r.json();})
 							.then(function(data){
 								console.log('[wcpos-pay] REST \u2192',JSON.stringify(data));
-								if(data&&data.result==='success'){
+								if(data&&data.id){
 									var msg=JSON.stringify({
 										result:'success',
 										redirect:data.redirect||'',
