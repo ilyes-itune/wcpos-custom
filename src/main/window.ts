@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.6';
+const APP_VERSION  = 'POSTir 5.3.7';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -46,7 +46,7 @@ export const createWindow = (): void => {
 			nodeIntegration: false,
 			contextIsolation: true,
 			devTools: true,
-			webSecurity: false, // v5.2.4 : autorise postMessage cross-origin wcpos://-→usmm-tir.fr (iframe paiement)
+			webSecurity: false,
 		},
 		backgroundColor: '#fff',
 	});
@@ -122,9 +122,23 @@ export const createWindow = (): void => {
 				if (oid && mainWindow && !mainWindow.isDestroyed()) {
 					log.info(`[wcpos-pay] order-pay annulé, commande en attente oid=${oid}`);
 					mainWindow.webContents.executeJavaScript(
-						`if(!window.__pendingPayment)window.__pendingPayment={};` +
-						`window.__pendingPayment[${oid}]=${JSON.stringify({ oid, okey })};` +
-						`console.log('[wcpos-pay] commande en attente oid=${oid}');`
+						`(function(){
+							if(!window.__pendingPayment)window.__pendingPayment={};
+							window.__pendingPayment[${oid}]=${JSON.stringify({ oid, okey })};
+							console.log('[wcpos-pay] commande en attente oid=${oid}');
+							// v5.3.7 : postMessage immédiat → WCPOS sait qu'on a pris le relais
+							// → pas de fallback-fetch → pas de PY02001
+							var msg = JSON.stringify({
+								action: 'wcpos-payment-pending',
+								orderId: ${oid}
+							});
+							window.postMessage({ action: 'wcpos-payment-pending', orderId: ${oid} }, '*');
+							window.dispatchEvent(new MessageEvent('message', {
+								data: msg,
+								origin: 'https://usmm-tir.fr',
+								source: window
+							}));
+						})();`
 					).catch(() => {});
 				}
 				return;
@@ -133,18 +147,14 @@ export const createWindow = (): void => {
 		}
 	);
 
-	/* ── v5.3.5 : onBeforeSendHeaders ───────────────────────────────────── *
-	 * order-pay est maintenant annulé dans onBeforeRequest                  *
-	 * → seul le pass-through wcpos-checkout et l'injection Origin restent  */
+	/* ── onBeforeSendHeaders ───────────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			// /wcpos-checkout/* : pass-through sans modifier Origin
 			if (d.url.includes('/wcpos-checkout/')) {
 				cb({ requestHeaders: d.requestHeaders });
 				return;
 			}
-			// Reste du site WP : injecte Origin: wcpos://-
 			cb({ requestHeaders: { ...d.requestHeaders, Origin: 'wcpos://-' } });
 		}
 	);
@@ -152,8 +162,6 @@ export const createWindow = (): void => {
 	mainWindow.webContents.session.webRequest.onHeadersReceived(
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
-			/* v5.2.3 : wcpos-checkout a besoin de CORS pour que l'app React
-			 * puisse accéder à contentWindow de l'iframe et envoyer postMessage */
 			if (d.url.includes('/wcpos-checkout/')) {
 				const hc: Record<string,string[]> = { ...(d.responseHeaders ?? {}) as Record<string,string[]> };
 				hc['Access-Control-Allow-Origin']      = ['wcpos://-'];
@@ -322,7 +330,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse v5.2.2
+	   BLOC 2 — Setup caisse
 	   ═══════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -614,9 +622,6 @@ export const createWindow = (): void => {
 					window.chkCaisse();
 				});
 
-				// ═══════════════════════════════════════════════════════════════
-				// ADMIN CREDENTIALS CLEANUP
-				// ═══════════════════════════════════════════════════════════════
 				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
 				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
 
