@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.7';
+const APP_VERSION  = 'POSTir 5.3.8';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -101,7 +101,8 @@ export const createWindow = (): void => {
 		{ urls: [
 			// v5.3.5 : order-pay annulé — empêche la page WC de charger
 			// (évite "déjà payée" + empêche onLoad → pas de timer fallback PY02001)
-			// Les infos de commande sont stockées pour le clic "Payer"
+			// v5.3.8 : /pay-order déclenché immédiatement → paiement terminé
+			//          avant le timer fallback WCPOS (~1s) → plus de PY02001
 			'https://usmm-tir.fr/wcpos-checkout/order-pay/*',
 			'*://*.novu.co/*','*://novu.co/*',
 			'*://updates.wcpos.com/*',
@@ -120,24 +121,36 @@ export const createWindow = (): void => {
 				const oid  = mId  ? parseInt(mId[1], 10) : 0;
 				const okey = mKey ? decodeURIComponent(mKey[1]) : '';
 				if (oid && mainWindow && !mainWindow.isDestroyed()) {
-					log.info(`[wcpos-pay] order-pay annulé, commande en attente oid=${oid}`);
+					log.info(`[wcpos-pay] order-pay annulé, paiement immédiat oid=${oid}`);
+					// v5.3.8 : paiement immédiat — le choix Espèces/Carte
+					// a déjà été fait dans l'overlay checkout-button
+					const restUrl  = JSON.stringify(WP_REST_BASE + '/pay-order');
+					const okeyJson = JSON.stringify(okey);
 					mainWindow.webContents.executeJavaScript(
 						`(function(){
-							if(!window.__pendingPayment)window.__pendingPayment={};
-							window.__pendingPayment[${oid}]=${JSON.stringify({ oid, okey })};
-							console.log('[wcpos-pay] commande en attente oid=${oid}');
-							// v5.3.7 : postMessage immédiat → WCPOS sait qu'on a pris le relais
-							// → pas de fallback-fetch → pas de PY02001
-							var msg = JSON.stringify({
-								action: 'wcpos-payment-pending',
-								orderId: ${oid}
-							});
-							window.postMessage({ action: 'wcpos-payment-pending', orderId: ${oid} }, '*');
-							window.dispatchEvent(new MessageEvent('message', {
-								data: msg,
-								origin: 'https://usmm-tir.fr',
-								source: window
-							}));
+							if(!window.__payProcessed)window.__payProcessed={};
+							if(window.__payProcessed[${oid}])return;
+							window.__payProcessed[${oid}]=true;
+							console.log('[wcpos-pay] /pay-order oid=${oid}');
+							fetch(${restUrl},{
+								method:'POST',
+								body:JSON.stringify({order_id:${oid},order_key:${okeyJson}}),
+								headers:{'Content-Type':'application/json'},
+								credentials:'include'
+							})
+							.then(function(r){return r.json();})
+							.then(function(data){
+								console.log('[wcpos-pay] REST →',JSON.stringify(data));
+								if(data&&data.id){
+									window.dispatchEvent(new MessageEvent('message',{
+										data:{action:'wcpos-payment-received',payload:data},
+										origin:'https://usmm-tir.fr',
+										source:window
+									}));
+									console.log('[wcpos-pay] dispatchEvent ✓ wcpos-payment-received id='+data.id+' status='+data.status);
+								}
+							})
+							.catch(function(e){console.error('[wcpos-pay]',e.message);});
 						})();`
 					).catch(() => {});
 				}
@@ -278,52 +291,6 @@ export const createWindow = (): void => {
 				setTimeout(hideFilterButton, 3000);
 				setTimeout(hideDemoButton, 1000);
 				setTimeout(hideDemoButton, 3000);
-
-				// v5.3.5 : Paiement déclenché au clic "Payer" (pas à l'ouverture du checkout)
-				// La requête order-pay est annulée dans onBeforeRequest (pas de page WC chargée)
-				// __pendingPayment est rempli dans onBeforeRequest via executeJavaScript
-				if(!window.__payClickBound){
-					window.__payClickBound=true;
-					document.addEventListener('click',function(e){
-						var btn=e.target&&e.target.closest?e.target.closest('[data-testid="process-payment-button"]'):null;
-						if(!btn)return;
-						var pending=window.__pendingPayment;
-						if(!pending)return;
-						var keys=Object.keys(pending);
-						if(!keys.length)return;
-						var oid=parseInt(keys[keys.length-1],10);
-						var p=pending[oid];
-						if(!p||!p.oid)return;
-						if(!window.__payProcessed)window.__payProcessed={};
-						if(window.__payProcessed[oid])return;
-						window.__payProcessed[oid]=true;
-						delete pending[oid];
-						console.log('[wcpos-pay] clic Payer oid='+oid);
-						fetch(${JSON.stringify(WP_REST_BASE+'/pay-order')},{
-							method:'POST',
-							body:JSON.stringify({order_id:oid,order_key:p.okey||''}),
-							headers:{'Content-Type':'application/json'},
-							credentials:'include'
-						})
-						.then(function(r){return r.json();})
-						.then(function(data){
-							console.log('[wcpos-pay] REST \u2192',JSON.stringify(data));
-							if(data&&data.id){
-								var iframe=document.querySelector('iframe[src*="order-pay"]')
-								        ||document.querySelector('iframe[src*="wcpos-checkout"]')
-								        ||document.querySelector('iframe');
-								var iframeWin=iframe?iframe.contentWindow:null;
-								window.dispatchEvent(new MessageEvent('message',{
-									data:{action:'wcpos-payment-received',payload:data},
-									origin:'https://usmm-tir.fr',
-									source:iframeWin||window
-								}));
-								console.log('[wcpos-pay] dispatchEvent \u2713 wcpos-payment-received id='+data.id);
-							}
-						})
-						.catch(function(e){console.error('[wcpos-pay]',e.message);});
-					},true);
-				}
 
 			}catch(e){console.error(e.message);}
 		})();`).catch((e: Error) => log.error('[ap] '+e.message));
