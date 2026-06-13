@@ -70,25 +70,10 @@ jobs:
           name: build-log
           path: build-log.txt
 
-      - name: 📦 Aplatir l'artefact
-        if: success()
-        shell: pwsh
-        run: |
-          $exeDir = Get-ChildItem -Path "out/make" -Recurse -Directory -Filter "POSTir-*" | Select-Object -First 1
-          if ($exeDir) {
-            $zipName = "$($exeDir.Name).zip"
-            Compress-Archive -Path "$($exeDir.FullName)\*" -DestinationPath "out\$zipName" -Force
-            Write-Host "Zip créé : out\$zipName"
-          } else {
-            Write-Host "Dossier POSTir non trouvé, upload du make complet"
-          }
-
       - name: 📦 Upload l'exécutable Windows
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PosTir
-          path: |
-            out/*.zip
-            out/make/**/*.exe
+          path: out/make/**/*
           if-no-files-found: warn
