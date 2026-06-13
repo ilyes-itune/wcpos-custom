@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.3.8';
+const APP_VERSION  = 'POSTir 5.4.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -46,7 +46,6 @@ export const createWindow = (): void => {
 			nodeIntegration: false,
 			contextIsolation: true,
 			devTools: true,
-			webSecurity: false,
 		},
 		backgroundColor: '#fff',
 	});
@@ -96,14 +95,9 @@ export const createWindow = (): void => {
 	mainWindow.webContents.on('unresponsive', () => log.error('[renderer] UNRESPONSIVE'));
 	mainWindow.webContents.on('responsive',   () => log.info ('[renderer] responsive'));
 
-	/* ── Blocage réseau + interception order-pay ────────────────────────── */
+	/* ── Blocage réseau ──────────────────────────────────────────────────── */
 	mainWindow.webContents.session.webRequest.onBeforeRequest(
 		{ urls: [
-			// v5.3.5 : order-pay annulé — empêche la page WC de charger
-			// (évite "déjà payée" + empêche onLoad → pas de timer fallback PY02001)
-			// v5.3.8 : /pay-order déclenché immédiatement → paiement terminé
-			//          avant le timer fallback WCPOS (~1s) → plus de PY02001
-			'https://usmm-tir.fr/wcpos-checkout/order-pay/*',
 			'*://*.novu.co/*','*://novu.co/*',
 			'*://updates.wcpos.com/*',
 			'*://wcpos.com/*','*://*.wcpos.com/*',
@@ -113,51 +107,7 @@ export const createWindow = (): void => {
 			'*://via.placeholder.com/*',
 			'*://api.notifications.wcpos.com/*',
 		] },
-		(d, cb) => {
-			if (d.url.includes('/wcpos-checkout/order-pay/')) {
-				cb({ cancel: true });
-				const mId  = d.url.match(/order-pay\/(\d+)/);
-				const mKey = d.url.match(/[?&]key=([^&]+)/);
-				const oid  = mId  ? parseInt(mId[1], 10) : 0;
-				const okey = mKey ? decodeURIComponent(mKey[1]) : '';
-				if (oid && mainWindow && !mainWindow.isDestroyed()) {
-					log.info(`[wcpos-pay] order-pay annulé, paiement immédiat oid=${oid}`);
-					// v5.3.8 : paiement immédiat — le choix Espèces/Carte
-					// a déjà été fait dans l'overlay checkout-button
-					const restUrl  = JSON.stringify(WP_REST_BASE + '/pay-order');
-					const okeyJson = JSON.stringify(okey);
-					mainWindow.webContents.executeJavaScript(
-						`(function(){
-							if(!window.__payProcessed)window.__payProcessed={};
-							if(window.__payProcessed[${oid}])return;
-							window.__payProcessed[${oid}]=true;
-							console.log('[wcpos-pay] /pay-order oid=${oid}');
-							fetch(${restUrl},{
-								method:'POST',
-								body:JSON.stringify({order_id:${oid},order_key:${okeyJson}}),
-								headers:{'Content-Type':'application/json'},
-								credentials:'include'
-							})
-							.then(function(r){return r.json();})
-							.then(function(data){
-								console.log('[wcpos-pay] REST →',JSON.stringify(data));
-								if(data&&data.id){
-									window.dispatchEvent(new MessageEvent('message',{
-										data:{action:'wcpos-payment-received',payload:data},
-										origin:'https://usmm-tir.fr',
-										source:window
-									}));
-									console.log('[wcpos-pay] dispatchEvent ✓ wcpos-payment-received id='+data.id+' status='+data.status);
-								}
-							})
-							.catch(function(e){console.error('[wcpos-pay]',e.message);});
-						})();`
-					).catch(() => {});
-				}
-				return;
-			}
-			cb({ cancel: true });
-		}
+		(_d, cb) => cb({ cancel: true })
 	);
 
 	/* ── onBeforeSendHeaders ───────────────────────────────────────────── */
@@ -176,10 +126,7 @@ export const createWindow = (): void => {
 		{ urls: [WP_SITE_URL + '/*'] },
 		(d, cb) => {
 			if (d.url.includes('/wcpos-checkout/')) {
-				const hc: Record<string,string[]> = { ...(d.responseHeaders ?? {}) as Record<string,string[]> };
-				hc['Access-Control-Allow-Origin']      = ['wcpos://-'];
-				hc['Access-Control-Allow-Credentials'] = ['true'];
-				cb({ responseHeaders: hc });
+				cb({ responseHeaders: d.responseHeaders });
 				return;
 			}
 			const h: Record<string,string[]> = {};
@@ -297,7 +244,7 @@ export const createWindow = (): void => {
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
-	   BLOC 2 — Setup caisse
+	   BLOC 2 — Setup caisse v5.4.0
 	   ═══════════════════════════════════════════════════════════════════════ */
 	function runSetup(): void {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -386,7 +333,7 @@ export const createWindow = (): void => {
 					if (!toast) {
 						toast = document.createElement('div');
 						toast.id = 'wcpos-admin-toast';
-						toast.style.cssText = 'position:fixed;top:80px;left:75%;transform:translateX(-50%);z-index:999999;display:none;font-family:-apple-system,sans-serif;';
+						toast.style.cssText = 'position:fixed;top:12px;left:75%;transform:translateX(-50%);z-index:9999999;display:none;font-family:-apple-system,sans-serif;';
 						document.body.appendChild(toast);
 					}
 					return toast;
@@ -489,6 +436,50 @@ export const createWindow = (): void => {
 					return '';
 				}
 
+				// ═══════════════════════════════════════════════════════════════
+				// v5.4.0 : GESTION CREDENTIALS PAR RÔLE
+				// Admin & shop_manager → credentials supprimés = mot de passe requis
+				// Caissier → credentials conservés = reste connecté
+				// ═══════════════════════════════════════════════════════════════
+				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
+				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
+
+				function clearCredentials(uuid) {
+					try {
+						var request = indexedDB.open('rxdbwcposusers_v2');
+						request.onsuccess = function(e) {
+							var db = e.target.result;
+							if (!db.objectStoreNames.contains('wp_credentials-1')) {
+								db.close(); return;
+							}
+							var tx = db.transaction('wp_credentials-1', 'readwrite');
+							var store = tx.objectStore('wp_credentials-1');
+							store.delete(uuid);
+							tx.oncomplete = function() { db.close(); };
+							tx.onerror = function() { db.close(); };
+							console.log('[auth] Credentials supprim\u00e9s uuid=' + uuid);
+						};
+						request.onerror = function() {};
+					} catch(e) {}
+				}
+
+				function handleAuthCleanup(usr) {
+					if (!usr) return;
+					var roles = usr.roles || [];
+					var isAdminUser = roles.indexOf('administrator') !== -1;
+					var isShopManager = roles.indexOf('shop_manager') !== -1;
+					
+					if (isAdminUser || isShopManager) {
+						// Admin & shop manager → mot de passe requis à chaque lancement
+						console.log('[auth] Admin/manager d\u00e9tect\u00e9, suppression credentials');
+						clearCredentials(ADMIN_CREDENTIALS_UUID);
+						clearCredentials(CAISSIER_CREDENTIALS_UUID);
+					} else {
+						// Caissier → credentials conservés, reste connecté
+						console.log('[auth] Caissier d\u00e9tect\u00e9, credentials conserv\u00e9s');
+					}
+				}
+
 				function initAuth(callback){
 					var cached = sessionStorage.getItem('wcpos_can_edit');
 					if(cached === 'true'){ callback(true); return; }
@@ -496,6 +487,9 @@ export const createWindow = (): void => {
 					var domLogin = getUserFromDOM();
 					if(domLogin){
 						rp('/whoami', {client_login: domLogin}, function(usr){
+							// v5.4.0 : nettoyage credentials par rôle
+							handleAuthCleanup(usr);
+							
 							if(usr && usr.can_edit===true){
 								sessionStorage.setItem('wcpos_can_edit', 'true');
 								callback(true);
@@ -509,6 +503,9 @@ export const createWindow = (): void => {
 							var dl = getUserFromDOM();
 							if(dl){
 								rp('/whoami', {client_login: dl}, function(usr){
+									// v5.4.0 : nettoyage credentials par rôle
+									handleAuthCleanup(usr);
+									
 									if(usr && usr.can_edit===true){
 										sessionStorage.setItem('wcpos_can_edit', 'true');
 										callback(true);
@@ -588,46 +585,6 @@ export const createWindow = (): void => {
 					isAdmin = result;
 					window.chkCaisse();
 				});
-
-				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
-				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
-
-				function clearAdminCredentials() {
-					try {
-						var request = indexedDB.open('rxdbwcposusers_v2');
-						request.onsuccess = function(e) {
-							var db = e.target.result;
-							if (!db.objectStoreNames.contains('wp_credentials-1')) {
-								db.close(); return;
-							}
-							var tx = db.transaction('wp_credentials-1', 'readwrite');
-							var store = tx.objectStore('wp_credentials-1');
-							var deleteRequest = store.delete(ADMIN_CREDENTIALS_UUID);
-							deleteRequest.onsuccess = function() {
-								console.log('[admin-cleanup] Credentials admin supprimés');
-							};
-							tx.oncomplete = function() { db.close(); };
-							tx.onerror = function() { db.close(); };
-						};
-						request.onerror = function() {};
-					} catch(e) {}
-				}
-
-				function checkAndCleanAdmin(username) {
-					var ADMIN_USERNAMES = ['ilyes'];
-					if (ADMIN_USERNAMES.includes(username.toLowerCase())) {
-						setTimeout(function() { clearAdminCredentials(); }, 500);
-					}
-				}
-
-				var lastKnownUser = sessionStorage.getItem('wcpos_user');
-				setInterval(function() {
-					var currentUser = sessionStorage.getItem('wcpos_user');
-					if (currentUser && currentUser !== lastKnownUser) {
-						if (!currentUser) { checkAndCleanAdmin(lastKnownUser); }
-						lastKnownUser = currentUser;
-					}
-				}, 1000);
 
 				setInterval(function(){ window.chkCaisse(); }, 30000);
 
