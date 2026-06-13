@@ -2,9 +2,9 @@
 	"name": "@wcpos/app-electron",
 	"license": "MIT",
 	"productName": "POSTir",
-	"version": "5.1.3",
+	"version": "5.4.0",
 	"description": "Electron app for USMM Section Tir",
-	"author": "PK + Ilyes Hafsi",
+	"author": "PK - Ilyes",
 	"packageManager": "pnpm@10.31.0",
 	"pnpm": {
 		"onlyBuiltDependencies": [
