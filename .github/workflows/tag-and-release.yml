@@ -34,13 +34,10 @@ jobs:
             -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Expand-Archive -Path "wcpos-dist.zip" -DestinationPath dist -Force
-          # Si un sous-dossier wcpos-dist/ est créé, on remonte son contenu
           if (Test-Path "dist/wcpos-dist") {
             Get-ChildItem -Path "dist/wcpos-dist" | Move-Item -Destination "dist" -Force
             Remove-Item -Path "dist/wcpos-dist" -Recurse -Force
           }
-          Write-Host "Contenu du dist :"
-          Get-ChildItem dist -Recurse -Depth 2 | Select-Object FullName
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
@@ -52,7 +49,6 @@ jobs:
       - name: 🔨 Rebuild better-sqlite3
         run: |
           $electronVersion = node -p "require('./node_modules/electron/package.json').version"
-          Write-Host "Electron version: $electronVersion"
           npx @electron/rebuild -v $electronVersion -f -o better-sqlite3
         shell: pwsh
 
@@ -62,7 +58,6 @@ jobs:
         run: |
           npx electron-forge make --platform=win32 2>&1 | Tee-Object -FilePath build-log.txt
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "=== DERNIÈRES 300 LIGNES DU LOG ==="
             Get-Content build-log.txt | Select-Object -Last 300
             exit 1
           }
@@ -79,27 +74,19 @@ jobs:
         if: success()
         shell: pwsh
         run: |
-          Write-Host "=== Contenu de out/make/ (debug) ==="
-          Get-ChildItem -Path "out/make" -Recurse -Depth 4 | Select-Object FullName
-          
-          # Chercher le dossier POSTir-*
-          $exeDir = Get-ChildItem -Path "out/make" -Recurse -Directory | Where-Object { $_.Name -like "POSTir-*" } | Select-Object -First 1
-          
-          if ($exeDir) {
-            Write-Host "Dossier POSTir trouvé : $($exeDir.FullName)"
-            $zipName = "$($exeDir.Name).zip"
-            Compress-Archive -Path "$($exeDir.FullName)\*" -DestinationPath "out\$zipName" -Force
-            Write-Host "✅ Zip créé : out\$zipName"
+          $version = node -p "require('./package.json').version"
+          $zipName = "POSTir-v$version.zip"
+          $appDir = Get-ChildItem -Path "out" -Recurse -Directory | Where-Object { (Test-Path "$($_.FullName)\resources\dist") } | Select-Object -First 1
+          if ($appDir) {
+            Compress-Archive -Path "$($appDir.FullName)\*" -DestinationPath "out\$zipName" -Force
+            Write-Host "✅ $zipName créé"
           } else {
-            Write-Host "⚠️ Dossier POSTir non trouvé, on zippe tout out/make"
-            Compress-Archive -Path "out\make\*" -DestinationPath "out\PosTir-make.zip" -Force
+            Write-Host "❌ Dossier applicatif non trouvé"
           }
 
-      - name: 📦 Upload l'exécutable Windows
+      - name: 📦 Upload
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PosTir
-          path: |
-            out/*.zip
-          if-no-files-found: warn
+          path: out/*.zip
