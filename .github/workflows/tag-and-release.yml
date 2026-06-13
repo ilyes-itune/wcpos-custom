@@ -61,6 +61,7 @@ jobs:
             Get-Content build-log.txt | Select-Object -Last 300
             exit 1
           }
+          Get-ChildItem -Path "out/make" -Recurse -Filter "*.zip" | Remove-Item -Force
         shell: pwsh
 
       - name: 📋 Upload build log en cas d'échec
@@ -70,7 +71,7 @@ jobs:
           name: build-log
           path: build-log.txt
 
-      - name: 📦 Aplatir l'artefact
+      - name: 📦 Créer zip final
         if: success()
         shell: pwsh
         run: |
@@ -82,6 +83,7 @@ jobs:
             Write-Host "✅ $zipName créé"
           } else {
             Write-Host "❌ Dossier applicatif non trouvé"
+            exit 1
           }
 
       - name: 📦 Upload
@@ -90,3 +92,4 @@ jobs:
         with:
           name: PosTir
           path: out/*.zip
+          if-no-files-found: error
