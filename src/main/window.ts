@@ -245,6 +245,9 @@ function replaceLoginLogo() {
 
 // Appels
 replaceLoginLogo();
+setTimeout(replaceLoginLogo, 500);
+setTimeout(replaceLoginLogo, 1500);
+setTimeout(replaceLoginLogo, 3000);
 
 // Dans le MutationObserver
 var permanentObserver = new MutationObserver(function() {
