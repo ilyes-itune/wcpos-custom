@@ -221,74 +221,76 @@ export const createWindow = (): void => {
 					});
 				}
 
-				// ═══════════════════════════════════════════════════════
-				// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
-				// Cible : splash screen + login + tout autre endroit
-				// ═══════════════════════════════════════════════════════
-				var LOGO_URL = 'logo-usmm.jpg';
-				var LOGO_WIDTH = 350;
-				var LOGO_HEIGHT = 350;
+// ═══════════════════════════════════════════════════════
+// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
+// Cible : splash screen + login + tout autre endroit
+// ═══════════════════════════════════════════════════════
+var LOGO_URL = 'logo-usmm.png';
 
-				function replaceAllWcposLogos() {
-					// Méthode 1 : Remplacer les SVG WCPOS par viewBox exact
-					var svgs = document.querySelectorAll('svg[viewBox="0 0 1260 1260"]');
-					svgs.forEach(function(svg) {
-						if (svg.getAttribute('data-logo-replaced')) return;
-						svg.setAttribute('data-logo-replaced', 'true');
+function replaceAllWcposLogos() {
+    // Méthode 1 : Remplacer les SVG WCPOS par viewBox exact
+    var svgs = document.querySelectorAll('svg[viewBox="0 0 1260 1260"]');
+    svgs.forEach(function(svg) {
+        if (svg.getAttribute('data-logo-replaced')) return;
+        svg.setAttribute('data-logo-replaced', 'true');
 
-						var img = document.createElement('img');
-						img.src = LOGO_URL;
-						img.alt = 'USMM Malakoff Tir Sportif';
-						img.style.width = (svg.getAttribute('width') || LOGO_WIDTH) + 'px';
-						img.style.height = (svg.getAttribute('height') || LOGO_HEIGHT) + 'px';
-						img.style.objectFit = 'contain';
-						img.style.display = 'block';
+        var img = document.createElement('img');
+        img.src = LOGO_URL;
+        img.alt = 'USMM Malakoff Tir Sportif';
+        img.style.display = 'block';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+        img.style.maxWidth = '500px';
+        img.style.maxHeight = '500px';
+        img.style.objectFit = 'contain';
 
-						svg.parentNode.replaceChild(img, svg);
-					});
+        svg.parentNode.replaceChild(img, svg);
+    });
 
-					// Méthode 2 : Cibler les conteneurs de login/splash par classe
-					var containers = document.querySelectorAll('.css-g5y9jx.flex-col.gap-4.w-full');
-					containers.forEach(function(container) {
-						if (container.getAttribute('data-logo-container-replaced')) return;
+    // Méthode 2 : Cibler les conteneurs de login/splash par classe
+    var containers = document.querySelectorAll('.css-g5y9jx.flex-col.gap-4.w-full');
+    containers.forEach(function(container) {
+        if (container.getAttribute('data-logo-container-replaced')) return;
 
-						// Chercher un SVG logo WCPOS dans ce conteneur
-						var found = false;
-						var svgsInContainer = container.querySelectorAll('svg');
-						svgsInContainer.forEach(function(s) {
-							if (s.getAttribute('data-logo-replaced')) { found = true; return; }
-							if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
-							    s.querySelector('path[fill="#323A46"]') ||
-							    s.innerHTML.indexOf('1260') > -1) {
-								found = true;
-							}
-						});
-						if (!found) return;
+        // Chercher un SVG logo WCPOS dans ce conteneur
+        var found = false;
+        var svgsInContainer = container.querySelectorAll('svg');
+        svgsInContainer.forEach(function(s) {
+            if (s.getAttribute('data-logo-replaced')) { found = true; return; }
+            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
+                s.querySelector('path[fill="#323A46"]') ||
+                s.innerHTML.indexOf('1260') > -1) {
+                found = true;
+            }
+        });
+        if (!found) return;
 
-						container.setAttribute('data-logo-container-replaced', 'true');
+        container.setAttribute('data-logo-container-replaced', 'true');
 
-						// Supprimer tous les SVG WCPOS restants
-						container.querySelectorAll('svg').forEach(function(s) {
-							if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
-							    s.querySelector('path[fill="#323A46"]') ||
-							    s.innerHTML.indexOf('1260') > -1) {
-								s.remove();
-							}
-						});
+        // Supprimer tous les SVG WCPOS restants
+        container.querySelectorAll('svg').forEach(function(s) {
+            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
+                s.querySelector('path[fill="#323A46"]') ||
+                s.innerHTML.indexOf('1260') > -1) {
+                s.remove();
+            }
+        });
 
-						// Insérer le nouveau logo
-						var img = document.createElement('img');
-						img.src = LOGO_URL;
-						img.alt = 'USMM Malakoff Tir Sportif';
-						img.width = LOGO_WIDTH;
-						img.height = LOGO_HEIGHT;
-						img.style.display = 'block';
-						img.style.margin = '0 auto';
-						img.style.objectFit = 'contain';
+        // Insérer le nouveau logo
+        var img = document.createElement('img');
+        img.src = LOGO_URL;
+        img.alt = 'USMM Malakoff Tir Sportif';
+        img.style.display = 'block';
+        img.style.margin = '0 auto';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+        img.style.maxWidth = '500px';
+        img.style.maxHeight = '500px';
+        img.style.objectFit = 'contain';
 
-						container.insertBefore(img, container.firstChild);
-					});
-				}
+        container.insertBefore(img, container.firstChild);
+    });
+}
 
 				hideClientHeader();
 				hideFilterButton();
