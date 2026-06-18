@@ -225,9 +225,9 @@ export const createWindow = (): void => {
 				// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
 				// Cible : splash screen + login + tout autre endroit
 				// ═══════════════════════════════════════════════════════
-				var LOGO_URL = 'https://usmm-tir.fr/wp-content/uploads/2025/12/cropped-cropped-USMM-1.jpg';
-				var LOGO_WIDTH = 280;
-				var LOGO_HEIGHT = 280;
+				var LOGO_URL = 'logo-usmm.jpg';
+				var LOGO_WIDTH = 350;
+				var LOGO_HEIGHT = 350;
 
 				function replaceAllWcposLogos() {
 					// Méthode 1 : Remplacer les SVG WCPOS par viewBox exact
