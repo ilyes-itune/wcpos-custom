@@ -641,12 +641,17 @@ function replaceAllWcposLogos() {
 						if(!d||d.error){ window._chkBusy = false; return; }
 						window.CAISSE_OPEN = !!(d && d.open);
 
-						if(isAdmin){
-							if(!window.CAISSE_OPEN) showAdminToast('Caisse ferm\u00e9e \u2014 mode administrateur', 'admin_closed');
-							else showAdminToast('Caisse ouverte \u2014 mode administrateur', 'admin_open');
+						var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
+					if(!isLoginScreen){
+    					if(isAdmin){
+        					if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
+        					else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
+    						} else {
+        						hideAdminToast();
+    						}
 						} else {
-							hideAdminToast();
-						}
+    				hideAdminToast();
+					}
 						updateCaisseUI();
 						window._chkBusy = false;
 					});
