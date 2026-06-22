@@ -223,17 +223,14 @@ export const createWindow = (): void => {
 
 // ═══════════════════════════════════════════════════════
 // REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
-// Cible : splash screen + login + tout autre endroit
 // ═══════════════════════════════════════════════════════
 var LOGO_URL = 'logo-usmm.png';
 
 function replaceAllWcposLogos() {
-    // Méthode 1 : Remplacer les SVG WCPOS par viewBox exact
     var svgs = document.querySelectorAll('svg[viewBox="0 0 1260 1260"]');
     svgs.forEach(function(svg) {
         if (svg.getAttribute('data-logo-replaced')) return;
         svg.setAttribute('data-logo-replaced', 'true');
-
         var img = document.createElement('img');
         img.src = LOGO_URL;
         img.alt = 'USMM Malakoff Tir Sportif';
@@ -243,19 +240,13 @@ function replaceAllWcposLogos() {
         img.style.maxWidth = '500px';
         img.style.maxHeight = '500px';
         img.style.objectFit = 'contain';
-
         svg.parentNode.replaceChild(img, svg);
     });
-
-    // Méthode 2 : Cibler les conteneurs de login/splash par classe
     var containers = document.querySelectorAll('.css-g5y9jx.flex-col.gap-4.w-full');
     containers.forEach(function(container) {
         if (container.getAttribute('data-logo-container-replaced')) return;
-
-        // Chercher un SVG logo WCPOS dans ce conteneur
         var found = false;
-        var svgsInContainer = container.querySelectorAll('svg');
-        svgsInContainer.forEach(function(s) {
+        container.querySelectorAll('svg').forEach(function(s) {
             if (s.getAttribute('data-logo-replaced')) { found = true; return; }
             if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
                 s.querySelector('path[fill="#323A46"]') ||
@@ -264,10 +255,7 @@ function replaceAllWcposLogos() {
             }
         });
         if (!found) return;
-
         container.setAttribute('data-logo-container-replaced', 'true');
-
-        // Supprimer tous les SVG WCPOS restants
         container.querySelectorAll('svg').forEach(function(s) {
             if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
                 s.querySelector('path[fill="#323A46"]') ||
@@ -275,8 +263,6 @@ function replaceAllWcposLogos() {
                 s.remove();
             }
         });
-
-        // Insérer le nouveau logo
         var img = document.createElement('img');
         img.src = LOGO_URL;
         img.alt = 'USMM Malakoff Tir Sportif';
@@ -287,10 +273,101 @@ function replaceAllWcposLogos() {
         img.style.maxWidth = '500px';
         img.style.maxHeight = '500px';
         img.style.objectFit = 'contain';
-
         container.insertBefore(img, container.firstChild);
     });
 }
+
+// ═══════════════════════════════════════════════════════
+// TOGGLE Ctrl+L : masquer/afficher l'interface login
+// ═══════════════════════════════════════════════════════
+var loginHidden = true;
+
+function loginHideAll() {
+    var siteRow = document.querySelector('[data-expoimage="true"]');
+    if (siteRow) siteRow = siteRow.closest('.flex-row');
+    if (siteRow) {
+        var children = siteRow.children;
+        for (var i = 0; i < children.length; i++) {
+            if (!children[i].textContent.includes('Utilisateurs connectés')) {
+                children[i].style.setProperty('display', 'none', 'important');
+            }
+        }
+    }
+    var usersLabel = document.querySelector('[data-testid="logged-in-users-label"]');
+    if (usersLabel) {
+        var titleBlock = usersLabel.parentElement?.previousElementSibling;
+        if (titleBlock) titleBlock.style.setProperty('display', 'none', 'important');
+    }
+    var urlCard = document.querySelector('.border-border.bg-card');
+    var usersCard = usersLabel ? usersLabel.closest('.border-border.bg-card') : null;
+    if (urlCard && urlCard !== usersCard) urlCard.style.setProperty('display', 'none', 'important');
+    var deleteBtn = document.querySelector('svg path[d*="M256 512a256"]')?.closest('button');
+    if (deleteBtn) deleteBtn = deleteBtn.parentElement;
+    if (deleteBtn) deleteBtn.style.setProperty('display', 'none', 'important');
+    if (usersCard) {
+        usersCard.style.border = 'none';
+        usersCard.style.boxShadow = 'none';
+        usersCard.style.padding = '0';
+        usersCard.style.backgroundColor = 'transparent';
+    }
+    if (usersLabel) {
+        var parent = usersLabel.parentElement;
+        if (parent) {
+            parent.style.display = 'flex';
+            parent.style.flexDirection = 'column';
+            parent.style.alignItems = 'center';
+            parent.style.width = '100%';
+        }
+    }
+    loginHidden = true;
+}
+
+function loginShowAll() {
+    var siteRow = document.querySelector('[data-expoimage="true"]')?.closest('.flex-row');
+    if (siteRow) {
+        var children = siteRow.children;
+        for (var i = 0; i < children.length; i++) {
+            children[i].style.removeProperty('display');
+        }
+    }
+    var usersLabel = document.querySelector('[data-testid="logged-in-users-label"]');
+    if (usersLabel) {
+        var titleBlock = usersLabel.parentElement?.previousElementSibling;
+        if (titleBlock) titleBlock.style.removeProperty('display');
+    }
+    var urlCard = document.querySelector('.border-border.bg-card');
+    var usersCard = usersLabel ? usersLabel.closest('.border-border.bg-card') : null;
+    if (urlCard && urlCard !== usersCard) urlCard.style.removeProperty('display');
+    var deleteBtn = document.querySelector('svg path[d*="M256 512a256"]')?.closest('button')?.parentElement;
+    if (deleteBtn) deleteBtn.style.removeProperty('display');
+    if (usersCard) {
+        usersCard.style.removeProperty('border');
+        usersCard.style.removeProperty('boxShadow');
+        usersCard.style.removeProperty('padding');
+        usersCard.style.removeProperty('backgroundColor');
+    }
+    if (usersLabel) {
+        var parent = usersLabel.parentElement;
+        if (parent) {
+            parent.style.removeProperty('display');
+            parent.style.removeProperty('flexDirection');
+            parent.style.removeProperty('alignItems');
+            parent.style.removeProperty('width');
+        }
+    }
+    loginHidden = false;
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault();
+        if (loginHidden) {
+            loginShowAll();
+        } else {
+            loginHideAll();
+        }
+    }
+});
 
 				hideClientHeader();
 				hideFilterButton();
@@ -301,12 +378,15 @@ function replaceAllWcposLogos() {
 				setTimeout(replaceAllWcposLogos, 1500);
 				setTimeout(replaceAllWcposLogos, 3000);
 				setTimeout(replaceAllWcposLogos, 5000);
+				setTimeout(loginHideAll, 800);
+				setTimeout(loginHideAll, 2000);
 
 				var permanentObserver = new MutationObserver(function() {
 					hideClientHeader();
 					hideFilterButton();
 					hideDemoButton();
 					replaceAllWcposLogos();
+					if (loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
 
@@ -367,11 +447,9 @@ function replaceAllWcposLogos() {
 				function createOverlay(){
 					var ov = document.getElementById('wcpos-caisse-overlay');
 					if (ov) return ov;
-
 					var caisseRect = getCaisseTabRect();
 					var arrowTop = caisseRect ? (caisseRect.top + caisseRect.height/2 - 8) : 147;
 					var arrowLeft = caisseRect ? (caisseRect.right + 8) : 70;
-
 					ov = document.createElement('div');
 					ov.id = 'wcpos-caisse-overlay';
 					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:linear-gradient(180deg, #0f1a2e 0%, #1a2d4a 100%);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
@@ -466,7 +544,6 @@ function replaceAllWcposLogos() {
 				function updateCaisseUI(){
 					var url = window.location.href.toLowerCase();
 					var isCaisseTab = (url.indexOf('customers') !== -1);
-
 					if (isAdmin) {
 						hideCaissierOverlay();
 						unblockAllTabs();
@@ -516,8 +593,6 @@ function replaceAllWcposLogos() {
 
 				// ═══════════════════════════════════════════════════════════════
 				// v5.4.0 : GESTION CREDENTIALS PAR RÔLE
-				// Admin & shop_manager → credentials supprimés = mot de passe requis
-				// Caissier → credentials conservés = reste connecté
 				// ═══════════════════════════════════════════════════════════════
 				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
 				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
@@ -546,7 +621,6 @@ function replaceAllWcposLogos() {
 					var roles = usr.roles || [];
 					var isAdminUser = roles.indexOf('administrator') !== -1;
 					var isShopManager = roles.indexOf('shop_manager') !== -1;
-					
 					if (isAdminUser || isShopManager) {
 						console.log('[auth] Admin/manager d\u00e9tect\u00e9, suppression credentials');
 						clearCredentials(ADMIN_CREDENTIALS_UUID);
@@ -564,7 +638,6 @@ function replaceAllWcposLogos() {
 					if(domLogin){
 						rp('/whoami', {client_login: domLogin}, function(usr){
 							handleAuthCleanup(usr);
-							
 							if(usr && usr.can_edit===true){
 								sessionStorage.setItem('wcpos_can_edit', 'true');
 								callback(true);
@@ -579,7 +652,6 @@ function replaceAllWcposLogos() {
 							if(dl){
 								rp('/whoami', {client_login: dl}, function(usr){
 									handleAuthCleanup(usr);
-									
 									if(usr && usr.can_edit===true){
 										sessionStorage.setItem('wcpos_can_edit', 'true');
 										callback(true);
@@ -617,7 +689,6 @@ function replaceAllWcposLogos() {
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
 					window._chkBusy = true;
-
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
 					if(currentUser && storedUser && currentUser !== storedUser){
@@ -636,22 +707,20 @@ function replaceAllWcposLogos() {
 						return;
 					}
 					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
-
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error){ window._chkBusy = false; return; }
 						window.CAISSE_OPEN = !!(d && d.open);
-
 						var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
-					if(!isLoginScreen){
-    					if(isAdmin){
-        					if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
-        					else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
-    						} else {
-        						hideAdminToast();
-    						}
+						if(!isLoginScreen){
+							if(isAdmin){
+								if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
+								else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
+							} else {
+								hideAdminToast();
+							}
 						} else {
-    				hideAdminToast();
-					}
+							hideAdminToast();
+						}
 						updateCaisseUI();
 						window._chkBusy = false;
 					});
@@ -695,7 +764,7 @@ function replaceAllWcposLogos() {
 		if (!tab) {
 			mainWindow.webContents.executeJavaScript(`(function(){
 				document.querySelectorAll('[id^="wpp-"]').forEach(function(el){ el.style.display = 'none'; });
-				})();`).catch(() => {});
+			})();`).catch(() => {});
 			return;
 		}
 		log.info(`[panel] \u2192 ${tab}`);
