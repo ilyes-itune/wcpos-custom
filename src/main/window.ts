@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.4.0';
+const APP_VERSION  = 'POSTir 5.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
