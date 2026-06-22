@@ -371,19 +371,6 @@ function loginShowAll() {
     loginHidden = false;
 }
 
-// Forcer la réinitialisation si on quitte la page login
-var lastUrl = window.location.href;
-setInterval(function() {
-    var currentUrl = window.location.href;
-    var wasLogin = lastUrl.indexOf('/connect') !== -1 || lastUrl.indexOf('/login') !== -1;
-    var isLogin = currentUrl.indexOf('/connect') !== -1 || currentUrl.indexOf('/login') !== -1;
-    if (wasLogin && !isLogin) {
-        loginShowAll();
-        loginHidden = false;
-    }
-    lastUrl = currentUrl;
-}, 500);
-
 document.addEventListener('keydown', function(e) {
     if (e.ctrlKey && e.key === 'l') {
         e.preventDefault();
@@ -415,12 +402,7 @@ document.addEventListener('keydown', function(e) {
 					hideDemoButton();
 					hideSidebarNotificationBell();
 					replaceAllWcposLogos();
-					if (isLoginPage()) {
-						if (loginHidden) loginHideAll();
-					} else {
-						loginShowAll();
-						loginHidden = false;
-					}
+					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
 
