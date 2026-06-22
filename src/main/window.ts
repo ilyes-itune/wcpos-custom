@@ -279,10 +279,17 @@ function replaceAllWcposLogos() {
 
 // ═══════════════════════════════════════════════════════
 // TOGGLE Ctrl+L : masquer/afficher l'interface login
+// UNIQUEMENT sur la page de connexion
 // ═══════════════════════════════════════════════════════
 var loginHidden = true;
 
+function isLoginPage() {
+    var href = window.location.href;
+    return href.indexOf('/connect') !== -1 || href.indexOf('/login') !== -1;
+}
+
 function loginHideAll() {
+    if (!isLoginPage()) return;
     var siteRow = document.querySelector('[data-expoimage="true"]');
     if (siteRow) siteRow = siteRow.closest('.flex-row');
     if (siteRow) {
@@ -323,6 +330,7 @@ function loginHideAll() {
 }
 
 function loginShowAll() {
+    if (!isLoginPage()) return;
     var siteRow = document.querySelector('[data-expoimage="true"]')?.closest('.flex-row');
     if (siteRow) {
         var children = siteRow.children;
@@ -361,6 +369,7 @@ function loginShowAll() {
 document.addEventListener('keydown', function(e) {
     if (e.ctrlKey && e.key === 'l') {
         e.preventDefault();
+        if (!isLoginPage()) return;
         if (loginHidden) {
             loginShowAll();
         } else {
@@ -386,7 +395,7 @@ document.addEventListener('keydown', function(e) {
 					hideFilterButton();
 					hideDemoButton();
 					replaceAllWcposLogos();
-					if (loginHidden) loginHideAll();
+					if (loginHidden && isLoginPage()) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
 
@@ -695,36 +704,36 @@ document.addEventListener('keydown', function(e) {
 						sessionStorage.removeItem('wcpos_can_edit');
 						sessionStorage.setItem('wcpos_user', currentUser);
 						hideAdminToast();
-						hideCaissierOverlay();
-						unblockAllTabs();
-						isAdmin = false;
-						showCaissierOverlay();
-						initAuth(function(result){
-							isAdmin = result;
-							window._chkBusy = false;
-							window.chkCaisse();
-						});
-						return;
-					}
-					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
-					rp('/caisse/status',{},function(d){
-						if(!d||d.error){ window._chkBusy = false; return; }
-						window.CAISSE_OPEN = !!(d && d.open);
-						var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
-						if(!isLoginScreen){
-							if(isAdmin){
-								if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
-								else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
+							hideCaissierOverlay();
+							unblockAllTabs();
+							isAdmin = false;
+							showCaissierOverlay();
+							initAuth(function(result){
+								isAdmin = result;
+								window._chkBusy = false;
+								window.chkCaisse();
+							});
+							return;
+						}
+						if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
+						rp('/caisse/status',{},function(d){
+							if(!d||d.error){ window._chkBusy = false; return; }
+							window.CAISSE_OPEN = !!(d && d.open);
+							var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
+							if(!isLoginScreen){
+								if(isAdmin){
+									if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
+									else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
+								} else {
+									hideAdminToast();
+								}
 							} else {
 								hideAdminToast();
 							}
-						} else {
-							hideAdminToast();
-						}
-						updateCaisseUI();
-						window._chkBusy = false;
-					});
-				};
+							updateCaisseUI();
+							window._chkBusy = false;
+						});
+					};
 
 				showCaissierOverlay();
 				blockSidebarTabs();
