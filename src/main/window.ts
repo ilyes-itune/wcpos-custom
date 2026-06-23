@@ -222,7 +222,7 @@ export const createWindow = (): void => {
 				}
 
 // ═══════════════════════════════════════════════════════
-// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
+// REMPLACEMENT LOGO WCPOS → USMM-TIR (Splash + Login)
 // ═══════════════════════════════════════════════════════
 var LOGO_URL = 'logo-usmm.png';
 
@@ -275,6 +275,18 @@ function replaceAllWcposLogos() {
         img.style.objectFit = 'contain';
         container.insertBefore(img, container.firstChild);
     });
+}
+
+// Remplacer le logo WCPOS sur la page d'auth WordPress (/wcpos-auth)
+function replaceWpAuthLogo() {
+    var img = document.querySelector('img[src*="wcpos-icon"]');
+    if (img && !img.getAttribute('data-replaced')) {
+        img.setAttribute('data-replaced', 'true');
+        img.src = 'logo-usmm.png';
+        img.alt = 'USMM Malakoff Tir Sportif';
+        img.style.width = '100px';
+        img.style.height = '100px';
+    }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -384,11 +396,14 @@ document.addEventListener('keydown', function(e) {
 				hideFilterButton();
 				hideDemoButton();
 				replaceAllWcposLogos();
+				replaceWpAuthLogo();
 				setTimeout(replaceAllWcposLogos, 100);
 				setTimeout(replaceAllWcposLogos, 500);
 				setTimeout(replaceAllWcposLogos, 1500);
 				setTimeout(replaceAllWcposLogos, 3000);
 				setTimeout(replaceAllWcposLogos, 5000);
+				setTimeout(replaceWpAuthLogo, 500);
+				setTimeout(replaceWpAuthLogo, 1500);
 
 				if (isLoginPage()) {
 					setTimeout(loginHideAll, 500);
@@ -400,6 +415,7 @@ document.addEventListener('keydown', function(e) {
 					hideFilterButton();
 					hideDemoButton();
 					replaceAllWcposLogos();
+					replaceWpAuthLogo();
 					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
@@ -559,6 +575,14 @@ document.addEventListener('keydown', function(e) {
 
 				function updateCaisseUI(){
 					var url = window.location.href.toLowerCase();
+					var isLoginScreen = (url.indexOf('/connect') !== -1) || (url.indexOf('/login') !== -1);
+					
+					// Ne rien faire sur la page login
+					if (isLoginScreen) {
+						hideAdminToast();
+						return;
+					}
+					
 					var isCaisseTab = (url.indexOf('customers') !== -1);
 
 					if (isAdmin) {
