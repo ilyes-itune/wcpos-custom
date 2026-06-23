@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.4.0';
+const APP_VERSION  = 'POSTir 5.4';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -222,6 +222,62 @@ export const createWindow = (): void => {
 				}
 
 // ═══════════════════════════════════════════════════════
+// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
+// ═══════════════════════════════════════════════════════
+var LOGO_URL = 'logo-usmm.png';
+
+function replaceAllWcposLogos() {
+    var svgs = document.querySelectorAll('svg[viewBox="0 0 1260 1260"]');
+    svgs.forEach(function(svg) {
+        if (svg.getAttribute('data-logo-replaced')) return;
+        svg.setAttribute('data-logo-replaced', 'true');
+        var img = document.createElement('img');
+        img.src = LOGO_URL;
+        img.alt = 'USMM Malakoff Tir Sportif';
+        img.style.display = 'block';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+        img.style.maxWidth = '500px';
+        img.style.maxHeight = '500px';
+        img.style.objectFit = 'contain';
+        svg.parentNode.replaceChild(img, svg);
+    });
+    var containers = document.querySelectorAll('.css-g5y9jx.flex-col.gap-4.w-full');
+    containers.forEach(function(container) {
+        if (container.getAttribute('data-logo-container-replaced')) return;
+        var found = false;
+        container.querySelectorAll('svg').forEach(function(s) {
+            if (s.getAttribute('data-logo-replaced')) { found = true; return; }
+            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
+                s.querySelector('path[fill="#323A46"]') ||
+                s.innerHTML.indexOf('1260') > -1) {
+                found = true;
+            }
+        });
+        if (!found) return;
+        container.setAttribute('data-logo-container-replaced', 'true');
+        container.querySelectorAll('svg').forEach(function(s) {
+            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
+                s.querySelector('path[fill="#323A46"]') ||
+                s.innerHTML.indexOf('1260') > -1) {
+                s.remove();
+            }
+        });
+        var img = document.createElement('img');
+        img.src = LOGO_URL;
+        img.alt = 'USMM Malakoff Tir Sportif';
+        img.style.display = 'block';
+        img.style.margin = '0 auto';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+        img.style.maxWidth = '500px';
+        img.style.maxHeight = '500px';
+        img.style.objectFit = 'contain';
+        container.insertBefore(img, container.firstChild);
+    });
+}
+
+// ═══════════════════════════════════════════════════════
 // MASQUAGE INTERFACE LOGIN + TOGGLE Ctrl+L
 // ═══════════════════════════════════════════════════════
 var loginHidden = true;
@@ -250,10 +306,10 @@ function loginHideAll() {
         }
     });
 
-    var title = document.querySelector('.css-146c3p1.text-foreground.web\\:select-text.text-base.font-bold');
+    var title = document.querySelector('.css-146c3p1.text-foreground.text-base.font-bold');
     if (title) title.style.setProperty('display', 'none', 'important');
 
-    var urlText = document.querySelector('.css-146c3p1.text-foreground.web\\:select-text.text-sm');
+    var urlText = document.querySelector('.css-146c3p1.text-foreground.text-sm');
     if (urlText) urlText.style.setProperty('display', 'none', 'important');
 
     var logoImg = document.querySelector('img[src*="icon.horse"]');
@@ -324,19 +380,26 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-if (isLoginPage()) {
-    setTimeout(loginHideAll, 500);
-    setTimeout(loginHideAll, 1500);
-}
-
 				hideClientHeader();
 				hideFilterButton();
 				hideDemoButton();
+				replaceAllWcposLogos();
+				setTimeout(replaceAllWcposLogos, 100);
+				setTimeout(replaceAllWcposLogos, 500);
+				setTimeout(replaceAllWcposLogos, 1500);
+				setTimeout(replaceAllWcposLogos, 3000);
+				setTimeout(replaceAllWcposLogos, 5000);
+
+				if (isLoginPage()) {
+					setTimeout(loginHideAll, 500);
+					setTimeout(loginHideAll, 1500);
+				}
 
 				var permanentObserver = new MutationObserver(function() {
 					hideClientHeader();
 					hideFilterButton();
 					hideDemoButton();
+					replaceAllWcposLogos();
 					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
@@ -547,8 +610,6 @@ if (isLoginPage()) {
 
 				// ═══════════════════════════════════════════════════════════════
 				// v5.4.0 : GESTION CREDENTIALS PAR RÔLE
-				// Admin & shop_manager → credentials supprimés = mot de passe requis
-				// Caissier → credentials conservés = reste connecté
 				// ═══════════════════════════════════════════════════════════════
 				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
 				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
