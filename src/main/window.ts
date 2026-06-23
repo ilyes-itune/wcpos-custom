@@ -309,8 +309,8 @@ function loginHideAll() {
     var title = document.querySelector('.css-146c3p1.text-foreground.text-base.font-bold');
     if (title) title.style.setProperty('display', 'none', 'important');
 
-    var urlText = document.querySelector('.css-146c3p1.text-foreground.text-sm');
-    if (urlText) urlText.style.setProperty('display', 'none', 'important');
+    var allTexts = document.querySelectorAll('.css-146c3p1.text-foreground');
+    if (allTexts.length >= 3) allTexts[2].style.setProperty('display', 'none', 'important');
 
     var logoImg = document.querySelector('img[src*="icon.horse"]');
     if (logoImg) logoImg.style.setProperty('display', 'none', 'important');
@@ -733,9 +733,14 @@ document.addEventListener('keydown', function(e) {
 						if(!d||d.error){ window._chkBusy = false; return; }
 						window.CAISSE_OPEN = !!(d && d.open);
 
-						if(isAdmin){
-							if(!window.CAISSE_OPEN) showAdminToast('Caisse ferm\u00e9e \u2014 mode administrateur', 'admin_closed');
-							else showAdminToast('Caisse ouverte \u2014 mode administrateur', 'admin_open');
+						var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
+						if(!isLoginScreen){
+							if(isAdmin){
+								if(!window.CAISSE_OPEN) showAdminToast('Caisse ferm\u00e9e \u2014 mode administrateur', 'admin_closed');
+								else showAdminToast('Caisse ouverte \u2014 mode administrateur', 'admin_open');
+							} else {
+								hideAdminToast();
+							}
 						} else {
 							hideAdminToast();
 						}
