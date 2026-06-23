@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.4';
+const APP_VERSION  = 'POSTir 5.4.0';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -157,7 +157,7 @@ export const createWindow = (): void => {
               'order-note-button','order-meta-button','save-to-server-button',
               'cart-customer-name'];
 		const css = HIDE.map(t => `[data-testid='${t}']`).join(',')
-			+ `,[aria-label='Open notification center']{display:none!important}`;
+			+ `,[aria-label='Notifications'],[aria-label='Open notification center']{display:none!important}`;
 		mainWindow.webContents.executeJavaScript(`(function(){
 			if(window.__ap||!document||!document.documentElement)return;
 			try{
@@ -221,70 +221,8 @@ export const createWindow = (): void => {
 					});
 				}
 
-				function hideSidebarNotificationBell(){
-					var bell = document.querySelector('button[aria-label="Notifications"][aria-haspopup="dialog"]');
-					if (bell) bell.style.setProperty('display', 'none', 'important');
-				}
-
 // ═══════════════════════════════════════════════════════
-// REMPLACEMENT GLOBAL DU LOGO WCPOS → USMM-TIR
-// ═══════════════════════════════════════════════════════
-var LOGO_URL = 'logo-usmm.png';
-
-function replaceAllWcposLogos() {
-    var svgs = document.querySelectorAll('svg[viewBox="0 0 1260 1260"]');
-    svgs.forEach(function(svg) {
-        if (svg.getAttribute('data-logo-replaced')) return;
-        svg.setAttribute('data-logo-replaced', 'true');
-        var img = document.createElement('img');
-        img.src = LOGO_URL;
-        img.alt = 'USMM Malakoff Tir Sportif';
-        img.style.display = 'block';
-        img.style.width = 'auto';
-        img.style.height = 'auto';
-        img.style.maxWidth = '500px';
-        img.style.maxHeight = '500px';
-        img.style.objectFit = 'contain';
-        svg.parentNode.replaceChild(img, svg);
-    });
-    var containers = document.querySelectorAll('.css-g5y9jx.flex-col.gap-4.w-full');
-    containers.forEach(function(container) {
-        if (container.getAttribute('data-logo-container-replaced')) return;
-        var found = false;
-        container.querySelectorAll('svg').forEach(function(s) {
-            if (s.getAttribute('data-logo-replaced')) { found = true; return; }
-            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
-                s.querySelector('path[fill="#323A46"]') ||
-                s.innerHTML.indexOf('1260') > -1) {
-                found = true;
-            }
-        });
-        if (!found) return;
-        container.setAttribute('data-logo-container-replaced', 'true');
-        container.querySelectorAll('svg').forEach(function(s) {
-            if (s.getAttribute('viewBox') === '0 0 1260 1260' ||
-                s.querySelector('path[fill="#323A46"]') ||
-                s.innerHTML.indexOf('1260') > -1) {
-                s.remove();
-            }
-        });
-        var img = document.createElement('img');
-        img.src = LOGO_URL;
-        img.alt = 'USMM Malakoff Tir Sportif';
-        img.style.display = 'block';
-        img.style.margin = '0 auto';
-        img.style.width = 'auto';
-        img.style.height = 'auto';
-        img.style.maxWidth = '500px';
-        img.style.maxHeight = '500px';
-        img.style.objectFit = 'contain';
-        container.insertBefore(img, container.firstChild);
-    });
-}
-
-// ═══════════════════════════════════════════════════════
-// TOGGLE Ctrl+L : masquer/afficher l'interface login
-// UNIQUEMENT sur la page de connexion
+// MASQUAGE INTERFACE LOGIN + TOGGLE Ctrl+L
 // ═══════════════════════════════════════════════════════
 var loginHidden = true;
 
@@ -295,79 +233,82 @@ function isLoginPage() {
 
 function loginHideAll() {
     if (!isLoginPage()) return;
-    var siteRow = document.querySelector('[data-expoimage="true"]');
-    if (siteRow) siteRow = siteRow.closest('.flex-row');
-    if (siteRow) {
-        var children = siteRow.children;
-        for (var i = 0; i < children.length; i++) {
-            if (!children[i].textContent.includes('Utilisateurs connectés')) {
-                children[i].style.setProperty('display', 'none', 'important');
+
+    var card = document.querySelector('.border-border.bg-card');
+    if (card) card.style.setProperty('display', 'none', 'important');
+
+    var allSvgs = document.querySelectorAll('svg');
+    var count = 0;
+    allSvgs.forEach(function(svg) {
+        var path = svg.querySelector('path');
+        if (path && path.getAttribute('d').startsWith('M256 512a256')) {
+            count++;
+            if (count === 2) {
+                var btn = svg.closest('button');
+                if (btn) btn.style.setProperty('display', 'none', 'important');
             }
         }
-    }
+    });
+
+    var title = document.querySelector('.css-146c3p1.text-foreground.web\\:select-text.text-base.font-bold');
+    if (title) title.style.setProperty('display', 'none', 'important');
+
+    var urlText = document.querySelector('.css-146c3p1.text-foreground.web\\:select-text.text-sm');
+    if (urlText) urlText.style.setProperty('display', 'none', 'important');
+
+    var logoImg = document.querySelector('img[src*="icon.horse"]');
+    if (logoImg) logoImg.style.setProperty('display', 'none', 'important');
+
+    var allCards = document.querySelectorAll('.border-border.bg-card');
+    allCards.forEach(function(c) {
+        if (c.style.display !== 'none' || !c.style.display) {
+            c.style.border = 'none';
+            c.style.boxShadow = 'none';
+            c.style.backgroundColor = 'transparent';
+        }
+    });
+
     var usersLabel = document.querySelector('[data-testid="logged-in-users-label"]');
     if (usersLabel) {
-        var titleBlock = usersLabel.parentElement?.previousElementSibling;
-        if (titleBlock) titleBlock.style.setProperty('display', 'none', 'important');
-    }
-    var urlCard = document.querySelector('.border-border.bg-card');
-    var usersCard = usersLabel ? usersLabel.closest('.border-border.bg-card') : null;
-    if (urlCard && urlCard !== usersCard) urlCard.style.setProperty('display', 'none', 'important');
-    var deleteBtn = document.querySelector('svg path[d*="M256 512a256"]')?.closest('button');
-    if (deleteBtn) deleteBtn = deleteBtn.parentElement;
-    if (deleteBtn) deleteBtn.style.setProperty('display', 'none', 'important');
-    if (usersCard) {
-        usersCard.style.border = 'none';
-        usersCard.style.boxShadow = 'none';
-        usersCard.style.padding = '0';
-        usersCard.style.backgroundColor = 'transparent';
-    }
-    if (usersLabel) {
-        var parent = usersLabel.parentElement;
-        if (parent) {
-            parent.style.display = 'flex';
-            parent.style.flexDirection = 'column';
-            parent.style.alignItems = 'center';
-            parent.style.width = '100%';
+        usersLabel.style.textAlign = 'center';
+        usersLabel.style.width = '100%';
+        var usersRow = usersLabel.parentElement?.querySelector('.flex-row.items-center.gap-2');
+        if (usersRow) {
+            usersRow.style.justifyContent = 'center';
+            usersRow.style.width = '100%';
         }
     }
+
     loginHidden = true;
 }
 
 function loginShowAll() {
     if (!isLoginPage()) return;
-    var siteRow = document.querySelector('[data-expoimage="true"]')?.closest('.flex-row');
-    if (siteRow) {
-        var children = siteRow.children;
-        for (var i = 0; i < children.length; i++) {
-            children[i].style.removeProperty('display');
-        }
-    }
+
+    var all = document.querySelectorAll('[style*="display: none"]');
+    all.forEach(function(el) {
+        if (el.textContent.trim() === 'Entrer dans le magasin de d\u00e9monstration') return;
+        el.style.removeProperty('display');
+    });
+
+    var allCards = document.querySelectorAll('.border-border.bg-card');
+    allCards.forEach(function(c) {
+        c.style.removeProperty('border');
+        c.style.removeProperty('boxShadow');
+        c.style.removeProperty('backgroundColor');
+    });
+
     var usersLabel = document.querySelector('[data-testid="logged-in-users-label"]');
     if (usersLabel) {
-        var titleBlock = usersLabel.parentElement?.previousElementSibling;
-        if (titleBlock) titleBlock.style.removeProperty('display');
-    }
-    var urlCard = document.querySelector('.border-border.bg-card');
-    var usersCard = usersLabel ? usersLabel.closest('.border-border.bg-card') : null;
-    if (urlCard && urlCard !== usersCard) urlCard.style.removeProperty('display');
-    var deleteBtn = document.querySelector('svg path[d*="M256 512a256"]')?.closest('button')?.parentElement;
-    if (deleteBtn) deleteBtn.style.removeProperty('display');
-    if (usersCard) {
-        usersCard.style.removeProperty('border');
-        usersCard.style.removeProperty('boxShadow');
-        usersCard.style.removeProperty('padding');
-        usersCard.style.removeProperty('backgroundColor');
-    }
-    if (usersLabel) {
-        var parent = usersLabel.parentElement;
-        if (parent) {
-            parent.style.removeProperty('display');
-            parent.style.removeProperty('flexDirection');
-            parent.style.removeProperty('alignItems');
-            parent.style.removeProperty('width');
+        usersLabel.style.removeProperty('textAlign');
+        usersLabel.style.removeProperty('width');
+        var usersRow = usersLabel.parentElement?.querySelector('.flex-row.items-center.gap-2');
+        if (usersRow) {
+            usersRow.style.removeProperty('justifyContent');
+            usersRow.style.removeProperty('width');
         }
     }
+
     loginHidden = false;
 }
 
@@ -383,25 +324,19 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+if (isLoginPage()) {
+    setTimeout(loginHideAll, 500);
+    setTimeout(loginHideAll, 1500);
+}
+
 				hideClientHeader();
 				hideFilterButton();
 				hideDemoButton();
-				hideSidebarNotificationBell();
-				replaceAllWcposLogos();
-				setTimeout(replaceAllWcposLogos, 100);
-				setTimeout(replaceAllWcposLogos, 500);
-				setTimeout(replaceAllWcposLogos, 1500);
-				setTimeout(replaceAllWcposLogos, 3000);
-				setTimeout(replaceAllWcposLogos, 5000);
-				setTimeout(loginHideAll, 800);
-				setTimeout(loginHideAll, 2000);
 
 				var permanentObserver = new MutationObserver(function() {
 					hideClientHeader();
 					hideFilterButton();
 					hideDemoButton();
-					hideSidebarNotificationBell();
-					replaceAllWcposLogos();
 					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
@@ -463,9 +398,11 @@ document.addEventListener('keydown', function(e) {
 				function createOverlay(){
 					var ov = document.getElementById('wcpos-caisse-overlay');
 					if (ov) return ov;
+
 					var caisseRect = getCaisseTabRect();
 					var arrowTop = caisseRect ? (caisseRect.top + caisseRect.height/2 - 8) : 147;
 					var arrowLeft = caisseRect ? (caisseRect.right + 8) : 70;
+
 					ov = document.createElement('div');
 					ov.id = 'wcpos-caisse-overlay';
 					ov.style.cssText = 'position:fixed;top:0;bottom:0;z-index:999999;background:linear-gradient(180deg, #0f1a2e 0%, #1a2d4a 100%);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;font-family:-apple-system,sans-serif;color:#fff;';
@@ -560,6 +497,7 @@ document.addEventListener('keydown', function(e) {
 				function updateCaisseUI(){
 					var url = window.location.href.toLowerCase();
 					var isCaisseTab = (url.indexOf('customers') !== -1);
+
 					if (isAdmin) {
 						hideCaissierOverlay();
 						unblockAllTabs();
@@ -609,6 +547,8 @@ document.addEventListener('keydown', function(e) {
 
 				// ═══════════════════════════════════════════════════════════════
 				// v5.4.0 : GESTION CREDENTIALS PAR RÔLE
+				// Admin & shop_manager → credentials supprimés = mot de passe requis
+				// Caissier → credentials conservés = reste connecté
 				// ═══════════════════════════════════════════════════════════════
 				var ADMIN_CREDENTIALS_UUID = '3de16a8f-d876-4a95-8a63-421b302c354c';
 				var CAISSIER_CREDENTIALS_UUID = '54d06a09-02d0-4515-9888-b1db9c09279a';
@@ -637,6 +577,7 @@ document.addEventListener('keydown', function(e) {
 					var roles = usr.roles || [];
 					var isAdminUser = roles.indexOf('administrator') !== -1;
 					var isShopManager = roles.indexOf('shop_manager') !== -1;
+					
 					if (isAdminUser || isShopManager) {
 						console.log('[auth] Admin/manager d\u00e9tect\u00e9, suppression credentials');
 						clearCredentials(ADMIN_CREDENTIALS_UUID);
@@ -654,6 +595,7 @@ document.addEventListener('keydown', function(e) {
 					if(domLogin){
 						rp('/whoami', {client_login: domLogin}, function(usr){
 							handleAuthCleanup(usr);
+							
 							if(usr && usr.can_edit===true){
 								sessionStorage.setItem('wcpos_can_edit', 'true');
 								callback(true);
@@ -668,6 +610,7 @@ document.addEventListener('keydown', function(e) {
 							if(dl){
 								rp('/whoami', {client_login: dl}, function(usr){
 									handleAuthCleanup(usr);
+									
 									if(usr && usr.can_edit===true){
 										sessionStorage.setItem('wcpos_can_edit', 'true');
 										callback(true);
@@ -705,6 +648,7 @@ document.addEventListener('keydown', function(e) {
 					if(window._chkBusy) return;
 					if(!inPOS()) return;
 					window._chkBusy = true;
+
 					var currentUser = getUserFromDOM();
 					var storedUser = sessionStorage.getItem('wcpos_user');
 					if(currentUser && storedUser && currentUser !== storedUser){
@@ -723,17 +667,14 @@ document.addEventListener('keydown', function(e) {
 						return;
 					}
 					if(currentUser && !storedUser){ sessionStorage.setItem('wcpos_user', currentUser); }
+
 					rp('/caisse/status',{},function(d){
 						if(!d||d.error){ window._chkBusy = false; return; }
 						window.CAISSE_OPEN = !!(d && d.open);
-						var isLoginScreen = (window.location.href.indexOf('/connect') !== -1) || (window.location.href.indexOf('/login') !== -1);
-						if(!isLoginScreen){
-							if(isAdmin){
-								if(!window.CAISSE_OPEN) showAdminToast('Caisse fermée — Mode Admin', 'admin_closed');
-								else showAdminToast('Caisse ouverte — Mode Admin', 'admin_open');
-							} else {
-								hideAdminToast();
-							}
+
+						if(isAdmin){
+							if(!window.CAISSE_OPEN) showAdminToast('Caisse ferm\u00e9e \u2014 mode administrateur', 'admin_closed');
+							else showAdminToast('Caisse ouverte \u2014 mode administrateur', 'admin_open');
 						} else {
 							hideAdminToast();
 						}
