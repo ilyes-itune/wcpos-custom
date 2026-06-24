@@ -278,18 +278,14 @@ function replaceAllWcposLogos() {
 }
 
 // ═══════════════════════════════════════════════════════
-// NETTOYAGE OVERLAY CAISSE SUR PAGE LOGIN
+// MASQUAGE OVERLAY/TOAST SUR PAGE LOGIN (sans remove!)
 // ═══════════════════════════════════════════════════════
-function cleanupCaisseOverlay() {
+function forceCleanupOnLogin() {
     if (!isLoginPage()) return;
     var overlay = document.getElementById('wcpos-caisse-overlay');
-    if (overlay) {
-        overlay.style.setProperty('display', 'none', 'important');
-    }
+    if (overlay) overlay.style.setProperty('display', 'none', 'important');
     var toast = document.getElementById('wcpos-admin-toast');
-    if (toast) {
-        toast.style.setProperty('display', 'none', 'important');
-    }
+    if (toast) toast.style.setProperty('display', 'none', 'important');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -305,8 +301,7 @@ function isLoginPage() {
 function loginHideAll() {
     if (!isLoginPage()) return;
 
-    // Nettoyer l'overlay caisse
-    cleanupCaisseOverlay();
+    forceCleanupOnLogin();
 
     var card = document.querySelector('.border-border.bg-card');
     if (card) card.style.setProperty('display', 'none', 'important');
@@ -362,6 +357,9 @@ function loginShowAll() {
     var all = document.querySelectorAll('[style*="display: none"]');
     all.forEach(function(el) {
         if (el.textContent.trim() === 'Entrer dans le magasin de d\u00e9monstration') return;
+        // PROTÉGER OVERLAY ET TOAST
+        if (el.id === 'wcpos-caisse-overlay') return;
+        if (el.id === 'wcpos-admin-toast') return;
         el.style.removeProperty('display');
     });
 
@@ -390,14 +388,10 @@ document.addEventListener('keydown', function(e) {
     if (e.ctrlKey && e.key === 'l') {
         e.preventDefault();
 
-        // Ignorer si on est dans le POS
         if (document.querySelector('[data-testid="search-products"]')) return;
-
-        // Ignorer si on n'est pas sur la page login
         if (!isLoginPage()) return;
 
-        // Nettoyer l'overlay avant de toggler
-        cleanupCaisseOverlay();
+        forceCleanupOnLogin();
 
         if (loginHidden) {
             loginShowAll();
@@ -417,7 +411,7 @@ document.addEventListener('keydown', function(e) {
 				setTimeout(replaceAllWcposLogos, 3000);
 				setTimeout(replaceAllWcposLogos, 5000);
 
-				cleanupCaisseOverlay();
+				forceCleanupOnLogin();
 				if (isLoginPage()) {
 					setTimeout(loginHideAll, 500);
 					setTimeout(loginHideAll, 1500);
@@ -428,7 +422,7 @@ document.addEventListener('keydown', function(e) {
 					hideFilterButton();
 					hideDemoButton();
 					replaceAllWcposLogos();
-					cleanupCaisseOverlay();
+					forceCleanupOnLogin();
 					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
@@ -453,9 +447,6 @@ document.addEventListener('keydown', function(e) {
 			if(window.__setup||!document||!document.body)return;
 			try{
 				if(!document.querySelector('[data-testid="search-products"]')){
-					// Nettoyer l'overlay caisse si on n'est plus dans le POS
-					var ov = document.getElementById('wcpos-caisse-overlay');
-					if (ov) ov.style.setProperty('display', 'none', 'important');
 					return;
 				}
 				window.__setup=true;
