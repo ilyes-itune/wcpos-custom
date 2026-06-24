@@ -16,7 +16,7 @@ if (isDevelopment) {
 
 let mainWindow: BrowserWindow | null;
 
-const APP_VERSION  = 'POSTir 5.4';
+const APP_VERSION  = 'POSTir 5.5';
 const WP_SITE_URL  = 'https://usmm-tir.fr';
 const WP_REST_BASE = 'https://usmm-tir.fr/wp-json/wcpos-custom/v1';
 
@@ -278,6 +278,21 @@ function replaceAllWcposLogos() {
 }
 
 // ═══════════════════════════════════════════════════════
+// NETTOYAGE OVERLAY CAISSE SUR PAGE LOGIN
+// ═══════════════════════════════════════════════════════
+function cleanupCaisseOverlay() {
+    if (!isLoginPage()) return;
+    var overlay = document.getElementById('wcpos-caisse-overlay');
+    if (overlay) {
+        overlay.style.setProperty('display', 'none', 'important');
+    }
+    var toast = document.getElementById('wcpos-admin-toast');
+    if (toast) {
+        toast.style.setProperty('display', 'none', 'important');
+    }
+}
+
+// ═══════════════════════════════════════════════════════
 // MASQUAGE INTERFACE LOGIN + TOGGLE Ctrl+L
 // ═══════════════════════════════════════════════════════
 var loginHidden = true;
@@ -289,6 +304,9 @@ function isLoginPage() {
 
 function loginHideAll() {
     if (!isLoginPage()) return;
+
+    // Nettoyer l'overlay caisse
+    cleanupCaisseOverlay();
 
     var card = document.querySelector('.border-border.bg-card');
     if (card) card.style.setProperty('display', 'none', 'important');
@@ -335,10 +353,6 @@ function loginHideAll() {
         }
     }
 
-    // Masquer le toast admin sur la page login
-    var adminToast = document.getElementById('wcpos-admin-toast');
-    if (adminToast) adminToast.style.setProperty('display', 'none', 'important');
-
     loginHidden = true;
 }
 
@@ -374,12 +388,17 @@ function loginShowAll() {
 
 document.addEventListener('keydown', function(e) {
     if (e.ctrlKey && e.key === 'l') {
-        // Ne pas intercepter si l'overlay caisse est visible
-        var overlay = document.getElementById('wcpos-caisse-overlay');
-        if (overlay && overlay.style.display === 'flex') return;
-
         e.preventDefault();
+
+        // Ignorer si on est dans le POS
+        if (document.querySelector('[data-testid="search-products"]')) return;
+
+        // Ignorer si on n'est pas sur la page login
         if (!isLoginPage()) return;
+
+        // Nettoyer l'overlay avant de toggler
+        cleanupCaisseOverlay();
+
         if (loginHidden) {
             loginShowAll();
         } else {
@@ -398,6 +417,7 @@ document.addEventListener('keydown', function(e) {
 				setTimeout(replaceAllWcposLogos, 3000);
 				setTimeout(replaceAllWcposLogos, 5000);
 
+				cleanupCaisseOverlay();
 				if (isLoginPage()) {
 					setTimeout(loginHideAll, 500);
 					setTimeout(loginHideAll, 1500);
@@ -408,6 +428,7 @@ document.addEventListener('keydown', function(e) {
 					hideFilterButton();
 					hideDemoButton();
 					replaceAllWcposLogos();
+					cleanupCaisseOverlay();
 					if (isLoginPage() && loginHidden) loginHideAll();
 				});
 				permanentObserver.observe(document.body, { childList: true, subtree: true });
@@ -432,6 +453,9 @@ document.addEventListener('keydown', function(e) {
 			if(window.__setup||!document||!document.body)return;
 			try{
 				if(!document.querySelector('[data-testid="search-products"]')){
+					// Nettoyer l'overlay caisse si on n'est plus dans le POS
+					var ov = document.getElementById('wcpos-caisse-overlay');
+					if (ov) ov.style.setProperty('display', 'none', 'important');
 					return;
 				}
 				window.__setup=true;
