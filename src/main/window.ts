@@ -357,7 +357,6 @@ function loginShowAll() {
     var all = document.querySelectorAll('[style*="display: none"]');
     all.forEach(function(el) {
         if (el.textContent.trim() === 'Entrer dans le magasin de d\u00e9monstration') return;
-        // PROTÉGER OVERLAY ET TOAST
         if (el.id === 'wcpos-caisse-overlay') return;
         if (el.id === 'wcpos-admin-toast') return;
         el.style.removeProperty('display');
@@ -391,10 +390,9 @@ document.addEventListener('keydown', function(e) {
         if (document.querySelector('[data-testid="search-products"]')) return;
         if (!isLoginPage()) return;
 
-        forceCleanupOnLogin();
-
         if (loginHidden) {
             loginShowAll();
+            forceCleanupOnLogin();
         } else {
             loginHideAll();
         }
